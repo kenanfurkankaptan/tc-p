@@ -21,7 +21,7 @@ OBJDIR :=objects
 
 SRC =*.cpp
 DEPS =*.h
-OBJS = main.o tcp_header.o ip_header.o connection.o queue.o utility.o
+OBJS = main.o tcp_header.o ip_header.o connection.o queue.o utility.o controller.o
 
 
 # Read this ugly line from the end:

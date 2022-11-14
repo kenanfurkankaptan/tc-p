@@ -124,7 +124,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
     uint32_t ackn = tcp_h.acknowledgment_number;  // ack number
     /* STATES */
     if (this->state == State::SynRcvd) {
-        if (is_between_wrapped(this->send.una++, ackn, this->send.nxt++)) {
+        if (is_between_wrapped(this->send.una - 1, ackn, this->send.nxt + 1)) {
             // must have ACKed our SYN, since we detected at least one ACKed byte
             // and we have only one byte (the SYN)
             this->state = State::Estab;
@@ -133,12 +133,12 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
         }
     }
     if ((this->state == State::Estab) | State::FinWait1 | State::FinWait2) {
-        if (is_between_wrapped(this->send.una, ackn, this->send.nxt++)) {
+        if (is_between_wrapped(this->send.una, ackn, this->send.nxt + 1)) {
             if (!this->unacked.data.empty()) {
                 int32_t data_start = [&]() {
                     if (this->send.una == this->send.iss) {
                         // send.una hasn't been updated yet with ACK for our SYN, so data starts just beyond it
-                        return this->send.una++;
+                        return this->send.una + 1;
                     } else {
                         return this->send.una;
                     };
@@ -168,19 +168,19 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
 
     // receive ack for out FIN
     if (this->state == State::FinWait1) {
-        if (this->send.una == closed_at++) {
+        if (this->send.una == closed_at + 1) {
             // our FIN has been ACKed!
             this->state = State::FinWait2;
         }
     }
     if (this->state == State::Closing) {
-        if (this->send.una == closed_at++) {
+        if (this->send.una == closed_at + 1) {
             // our FIN has been ACKed!
             this->state = State::TimeWait;
         }
     }
     if (this->state == State::LastAck) {
-        if (this->send.una == closed_at++) {
+        if (this->send.una == closed_at + 1) {
             // our FIN has been ACKed!
             this->state = State::Closed;
         }
@@ -216,8 +216,6 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
 
             /* Send an acknowledgment of the form: <SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK> */
             /** TODO: maybe just tick to piggyback ack on data?? */
-            std::cout << seqn << std::endl;
-            std::cout << this->send.nxt << std::endl;
             this->write(dev, this->send.nxt, 0);
         }
     }
@@ -226,17 +224,17 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
         // we are done with connection
         switch (this->state) {
             case FinWait2:
-                this->recv.nxt++;
+                ++this->recv.nxt;
                 this->write(dev, this->send.nxt, 0);
                 this->state = State::TimeWait;
                 break;
             case FinWait1:
-                this->recv.nxt++;
+                ++this->recv.nxt;
                 this->write(dev, this->send.nxt, 0);
                 this->state = State::Closing;
                 break;
             case Estab:
-                this->recv.nxt++;
+                ++this->recv.nxt;
                 this->write(dev, this->send.nxt, 0);
                 this->state = State::TimeWait;
                 break;
@@ -258,7 +256,7 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
 
     uint32_t offset = seq - this->send.una;
     // we need two special case the two 'virtual' bytes SYN and FIN
-    if (seq == closed_at++) {
+    if (seq == closed_at + 1) {
         // trying to write following FIN
         offset = 0;
         limit = 0;
@@ -273,10 +271,13 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     //     t = &t[(offset - skipped)..];
     // }
 
-    const uint32_t max_data = std::min(limit, (uint32_t)unacked.data.size());
-    const uint32_t size = std::min((uint32_t)buf_len, this->tcp.get_header_len() + ip.size() + max_data);
+    this->ip.set_size(20);
+    this->tcp.set_header_len(20);
 
-    this->ip.payload_len = size - ip.size();
+    const uint32_t max_data = std::min(limit, (uint32_t)unacked.data.size());
+    const uint32_t size = std::min((uint32_t)buf_len, this->tcp.get_header_len() + ip.get_size() + max_data);
+
+    this->ip.payload_len = size;
 
     uint8_t *unwritten = buf;
     // uint8_t unwritten[size];
@@ -284,10 +285,9 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
 
     this->ip.header_checksum = this->ip.compute_ipv4_checksum();
     this->ip.write_to_buff((char *)unwritten);
-    uint32_t ip_header_ends_at = ip.size();
+    uint32_t ip_header_ends_at = ip.get_size();
 
     // postpone writing the tcp header because we need the payload as one contiguous slice to calculate the tcp checksum
-    this->tcp.set_header_len(20);
     uint32_t tcp_header_ends_at = ip_header_ends_at + this->tcp.get_header_len();
 
     uint32_t payload_bytes = ([&]() -> uint32_t {
@@ -306,11 +306,11 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
 
     uint32_t next_seq = seq + payload_bytes;
     if (this->tcp.syn()) {
-        next_seq++;
+        ++next_seq;
         this->tcp.syn(false);
     }
     if (this->tcp.fin()) {
-        next_seq++;
+        ++next_seq;
         this->tcp.fin(false);
     }
     if (wrapping_lt(this->send.nxt, next_seq)) {

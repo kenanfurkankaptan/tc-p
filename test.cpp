@@ -1,8 +1,20 @@
 #include <bitset>
 #include <iostream>
 
+#include "connection.h"
 #include "ip_header.h"
 #include "tcp_header.h"
+
+std::string toIpAddrString(int32_t ip) {
+    unsigned char bytes[4];
+    bytes[0] = ip & 0xFF;
+    bytes[1] = (ip >> 8) & 0xFF;
+    bytes[2] = (ip >> 16) & 0xFF;
+    bytes[3] = (ip >> 24) & 0xFF;
+    printf("%d.%d.%d.%d\n", bytes[3], bytes[2], bytes[1], bytes[0]);
+
+    return "";
+}
 
 void test_ip_header(Net::Ipv4Header &ip) {
     std::cout << "ver_ihl " << std::bitset<8>(ip.ver_ihl) << std::endl;
@@ -18,7 +30,7 @@ void test_ip_header(Net::Ipv4Header &ip) {
 }
 
 void test_ip_options(Net::Ipv4Header &ip) {
-    for (int i = 0; i < ip.size() - 20; i++) {
+    for (int i = 0; i < ip.get_size() - 20; i++) {
         std::cout << std::bitset<8>(ip.options[i]) << std::endl;
     }
 }

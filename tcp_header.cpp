@@ -110,7 +110,7 @@ uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, i
     sum += ((uint16_t *)&ip_h.destination)[1];
     sum += IPPROTO_TCP & 0x000F;
     // sum += htons(IPPROTO_TCP);              // add the protocol, it always will be tcp protocol
-    sum += ip_h.payload_len - ip_h.size();  // tcp len, it includes data len
+    sum += ip_h.payload_len - ip_h.get_size();  // tcp len, it includes data len
 
     // add tcp header
     sum += source_port;
@@ -164,6 +164,7 @@ void TcpHeader::set_header_len(uint16_t len) {
     if (len > 60) {
         std::cout << "error: tcp header len > 60" << std::endl;
         this->data_offset_and_flags = 0xF000;
+        return;
     }
     this->data_offset_and_flags ^= (((len / sizeof(uint32_t)) << 12) ^ this->data_offset_and_flags) & (0xF000);
 }

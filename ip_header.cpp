@@ -101,8 +101,17 @@ uint8_t Ipv4Header::ip_version() const {
     return (ver_ihl >> 4) & 0xF0;
 }
 
-uint16_t Ipv4Header::size() const {
+uint16_t Ipv4Header::get_size() const {
     return (ver_ihl & 0x0F) * sizeof(uint32_t);
+}
+
+void Ipv4Header::set_size(uint8_t size) {
+    if (size > 60) {
+        std::cout << "error: ip header len > 60" << std::endl;
+        this->ver_ihl = 0x0F;
+        return;
+    }
+    this->ver_ihl ^= ((size / sizeof(uint32_t)) ^ this->ver_ihl) & (0x0F);
 }
 
 /*
@@ -129,7 +138,7 @@ uint16_t Ipv4Header::compute_ipv4_checksum() {
 
     // add options
     uint8_t *addr = options;
-    int count = this->size() - 20;
+    int count = this->get_size() - 20;
     while (count > 1) {
         sum += ntohs(*addr++);
         count -= 2;

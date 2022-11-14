@@ -32,7 +32,8 @@ class Ipv4Header {
     void write_to_buff(char *buff);
 
     uint8_t ip_version() const;
-    uint16_t size() const;
+    uint16_t get_size() const;
+    void set_size(uint8_t size);
     uint16_t compute_ipv4_checksum();
 
     std::array<int8_t, 4> get_src_ip_array();
