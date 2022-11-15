@@ -99,6 +99,9 @@ void TcpHeader::write_to_buff(char *buff) {
     return;
 }
 
+/**
+ * https://gist.github.com/david-hoze/0c7021434796997a4ca42d7731a7073a
+ */
 uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, int data_len) {
     this->checksum = 0;
     uint32_t sum = 0;
@@ -108,8 +111,7 @@ uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, i
     sum += ((uint16_t *)&ip_h.source)[1];  // and second part
     sum += ((uint16_t *)&ip_h.destination)[0];
     sum += ((uint16_t *)&ip_h.destination)[1];
-    sum += IPPROTO_TCP & 0x000F;
-    // sum += htons(IPPROTO_TCP);              // add the protocol, it always will be tcp protocol
+    sum += IPPROTO_TCP & 0x000F;                // add the protocol, it always will be tcp protocol
     sum += ip_h.payload_len - ip_h.get_size();  // tcp len, it includes data len
 
     // add tcp header
@@ -140,17 +142,18 @@ uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, i
     uint16_t *addr_data = (uint16_t *)data;
     int data_count = data_len;
     while (data_count > 1) {
-        sum += ntohs(*addr_data++);
+        sum += ntohs(*addr_data);
+        addr_data++;
         data_count -= 2;
     }
     // if any bytes left, pad the bytes and add
     if (data_count > 0) {
-        sum += ((*addr_data) & htons(0xFF00));
+        sum += (ntohs(*addr_data) & (0xFF00));
     }
 
     // Fold sum to 16 bits: add carrier to result
     while (sum >> 16) {
-        sum = (sum & 0xffff) + (sum >> 16);
+        sum = (sum & 0xFFFF) + (sum >> 16);
     }
     // one's complement
     return ((uint16_t)sum ^ 0xFFFF);

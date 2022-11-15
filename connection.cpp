@@ -43,7 +43,7 @@ void Connection::accept(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpHead
     this->incoming = Queue();
     this->unacked = Queue();
     this->closed = false;
-    this->closed_at = -1;
+    this->closed_at = 0;
     //         timers: Timers {
     //             send_times: Default::default(),
     //             srtt: time::Duration::from_secs(1 * 60).as_secs_f64(),
@@ -145,18 +145,26 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                 }();
 
                 int32_t acked_data_end = std::min(ackn - data_start, (uint32_t)this->unacked.data.size());
+                this->unacked.remove(acked_data_end);
 
-                // self.unacked.drain(..acked_data_end);
-                // self.timers.send_times.retain(
-                //     | &seq, sent | {
-                //           if is_between_wrapped (self.send.una, seq, ackn) {
-                //               self.timers.srtt =
-                //                   0.8 * self.timers.srtt + (1.0 - 0.8) * sent.elapsed().as_secs_f64();
-                //               false
-                //           } else {
-                //               true
-                //           }
-                //       });
+                std::map<uint32_t, std::chrono::_V2::system_clock::time_point>::const_iterator itr;
+                auto map2 = this->timers.send_times;
+                for (itr = map2.cbegin(); itr != map2.cend();) {
+                    itr = ([&]() {
+                        auto seq = itr->first;
+                        auto sent = itr->second;
+                        if (is_between_wrapped(this->send.una, seq, ackn)) {
+                            auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - sent).count();
+                            this->timers.srtt = 0.8 * this->timers.srtt + (1.0 - 0.8) * elapsed;
+                            return true;
+
+                        } else {
+                            return false;
+                        }
+                    }())
+                              ? map2.erase(itr)
+                              : std::next(itr);
+                }
 
                 //----------------------------------------------------------------------------------
             }
@@ -247,6 +255,83 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
     return this->availability();
 }
 
+void Connection::on_tick(struct device *dev) {
+    if (this->state == (State::Closed | State::TimeWait | State::FinWait2)) {
+        // we have shutdown our write side and the other side acked, no need to (re)transmit anything
+        return;
+    }
+
+    uint32_t nunacked_data = (closed_at != 0 ? closed_at : this->send.nxt) - this->send.una;
+    uint32_t nunsent_data = this->unacked.data.size() - nunacked_data;
+
+    /** TODO: FIX */
+    auto temp66 = *(std::next(this->timers.send_times.begin(), this->send.una));
+    uint64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - temp66.second).count();
+    bool should_retransmit = ([&]() {
+        return (waited_for > std::chrono::microseconds(1000000).count()) && (waited_for * (std::chrono::system_clock::period::num / std::chrono::system_clock::period::den) > 1.5 * this->timers.srtt);
+    }());
+
+    if (should_retransmit) {
+        // we should retransmit!
+        uint32_t send = std::min((uint32_t)this->unacked.data.size(), (uint32_t)this->send.wnd);
+
+        if (send < this->send.wnd && this->closed) {
+            // can we include the FIN?
+            this->tcp.fin(true);
+            this->closed_at = this->send.una + this->unacked.data.size();
+        }
+
+        if (send == 0) {
+            return;
+        };
+
+        this->write(dev, this->send.una, send);
+    } else {
+        // we should send new data if have new data and space in the window
+        if (nunsent_data == 0 && this->closed_at != 0) {
+            return;
+        }
+
+        uint32_t allowed = this->send.wnd - nunacked_data;
+        if (allowed == 0) {
+            return;
+        }
+
+        uint32_t send = std::min(nunsent_data, allowed);
+        if (send < allowed && this->closed && this->closed_at == 0) {
+            this->tcp.fin(true);
+            this->closed_at = this->send.una + this->unacked.data.size();
+        }
+
+        if (send == 0) {
+            return;
+        };
+
+        // std::cout << "this->send.nxt" << std::endl;
+        // std::cout << this->send.nxt << std::endl;
+        // std::cout << "this->send.una" << std::endl;
+        // std::cout << this->send.una << std::endl;
+
+        // std::cout << "this->unacked.data.size()" << std::endl;
+        // std::cout << this->unacked.data.size() << std::endl;
+
+        // std::cout << "nunacked_data" << std::endl;
+        // std::cout << nunacked_data << std::endl;
+        // std::cout << "nunsent_data" << std::endl;
+        // std::cout << nunsent_data << std::endl;
+
+        // std::cout << "send" << std::endl;
+        // std::cout << send << std::endl;
+        // std::cout << "allowed" << std::endl;
+        // std::cout << allowed << std::endl;
+
+        this->write(dev, this->send.nxt, send);
+    }
+
+    // if FIN, enter FIN-WAIT-1
+    return;
+}
+
 void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     const uint32_t buf_len = 1500;
     uint8_t buf[buf_len] = {};
@@ -256,20 +341,11 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
 
     uint32_t offset = seq - this->send.una;
     // we need two special case the two 'virtual' bytes SYN and FIN
-    if (seq == closed_at + 1) {
+    if (this->closed && (seq == this->closed_at + 1)) {
         // trying to write following FIN
         offset = 0;
         limit = 0;
     }
-
-    // let (mut h, mut t) = self.unacked.as_slices();
-    // if h.len() >= offset {
-    //     h = &h[offset..];
-    // } else {
-    //     let skipped = h.len();
-    //     h = &[];
-    //     t = &t[(offset - skipped)..];
-    // }
 
     this->ip.set_size(20);
     this->tcp.set_header_len(20);
@@ -292,7 +368,7 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
 
     uint32_t payload_bytes = ([&]() -> uint32_t {
         uint32_t written = 0;
-        written += this->unacked.dequeue(unwritten + tcp_header_ends_at, max_data);
+        written += this->unacked.copy(unwritten + tcp_header_ends_at, max_data);
         return written;
     }());
 
@@ -300,9 +376,6 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
 
     this->tcp.checksum = this->tcp.compute_tcp_checksum(this->ip, unwritten + tcp_header_ends_at, payload_bytes);
     this->tcp.write_to_buff((char *)(unwritten) + ip_header_ends_at);
-
-    // std::cout << ip_header_ends_at << std::endl;
-    // std::cout << tcp_header_ends_at << std::endl;
 
     uint32_t next_seq = seq + payload_bytes;
     if (this->tcp.syn()) {
@@ -317,9 +390,31 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
         this->send.nxt = next_seq;
     }
 
-    /** TODO: implement timers */
-    // self.timers.send_times.insert(seq, time::Instant::now());
+    this->timers.send_times.insert({seq, std::chrono::high_resolution_clock::now()});
     tuntap_write(dev, buf, payload_ends_at);
+    return;
+}
+
+void Connection::send_rst(struct device *dev) {
+    this->tcp.rst(true);
+    // TODO: fix sequence numbers here
+    // If the incoming segment has an ACK field, the reset takes its
+    // sequence number from the ACK field of the segment, otherwise the
+    // reset has sequence number zero and the ACK field is set to the sum
+    // of the sequence number and segment length of the incoming segment.
+    // The connection remains in the same state.
+    //
+    // TODO: handle synchronized RST
+    // 3.  If the connection is in a synchronized state (ESTABLISHED,
+    // FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT, CLOSING, LAST-ACK, TIME-WAIT),
+    // any unacceptable segment (out of window sequence number or
+    // unacceptible acknowledgment number) must elicit only an empty
+    // acknowledgment segment containing the current send-sequence number
+    // and an acknowledgment indicating the next sequence number expected
+    // to be received, and the connection remains in the same state.
+    this->tcp.sequence_number = 0;
+    this->tcp.acknowledgment_number = 0;
+    this->write(dev, this->send.nxt, 0);
     return;
 }
 

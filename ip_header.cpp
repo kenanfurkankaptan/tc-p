@@ -114,12 +114,13 @@ void Ipv4Header::set_size(uint8_t size) {
     this->ver_ihl ^= ((size / sizeof(uint32_t)) ^ this->ver_ihl) & (0x0F);
 }
 
-/*
-The method compute_ip_checksum initialize the checksum field of IP header to zeros. Then calls a method compute_checksum.
-The mothod compute_checksum accepts the computation data and computation length as two input parameters. It sum up all 16-bit
-words, if there’s odd number of bytes, it adds a padding byte. After summing up all words, it folds the sum to 16 bits by
-adding the carrier to the results. At last, it takes the one’s complement of sum and cast it to 16-bit unsigned short type.
-*/
+/**
+ * The method compute_ip_checksum initialize the checksum field of IP header to zeros. Then calls a method compute_checksum.
+ * The mothod compute_checksum accepts the computation data and computation length as two input parameters. It sum up all 16-bit
+ * words, if there’s odd number of bytes, it adds a padding byte. After summing up all words, it folds the sum to 16 bits by
+ * adding the carrier to the results. At last, it takes the one’s complement of sum and cast it to 16-bit unsigned short type.
+ * https://gist.github.com/david-hoze/0c7021434796997a4ca42d7731a7073a
+ */
 uint16_t Ipv4Header::compute_ipv4_checksum() {
     this->header_checksum = 0;
     uint32_t sum = 0;

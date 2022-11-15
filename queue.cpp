@@ -21,3 +21,17 @@ int Queue::dequeue(uint8_t *array, int bytesToRead) {
     data.erase(data.begin(), data.begin() + bytesToRead);
     return bytesToRead;
 }
+
+int Queue::copy(uint8_t *array, int bytesToRead) {
+    std::lock_guard<std::mutex> lock(lockMutex);
+
+    std::copy_n(data.begin(), bytesToRead, array);
+    return bytesToRead;
+}
+
+int Queue::remove(int bytesToRemove) {
+    std::lock_guard<std::mutex> lock(lockMutex);
+
+    data.erase(data.begin(), data.begin() + bytesToRemove);
+    return bytesToRemove;
+}

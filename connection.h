@@ -8,6 +8,7 @@
 #include <array>
 #include <bitset>
 #include <iostream>
+#include <map>
 #include <queue>
 #include <vector>
 
@@ -87,18 +88,25 @@ struct RecvSequenceSpace {
     uint32_t irs;
 };
 
+struct Timer {
+    double srtt;
+    std::map<uint32_t, std::chrono::_V2::system_clock::time_point> send_times;
+};
+
 class Connection {
    public:
+    std::mutex lockMutex;
+
     State state = Listen;
     SendSequenceSpace send;
     RecvSequenceSpace recv;
     Net::Ipv4Header ip;
     Net::TcpHeader tcp;
-    // Timer timers;        /** TODO: implement timers **/
+    Timer timers;
     Queue incoming;
     Queue unacked;  // unacked contains both sent and unsent data
     bool closed;
-    uint32_t closed_at;
+    uint32_t closed_at;  // == 0 means it is not set
 
     /*
     A copy or move assignment operator cannot be automatically generated
@@ -106,11 +114,12 @@ class Connection {
     (which are not copy- or move-assignable) so you must define your own.
     */
     Connection() = default;
-    // Connection(Connection &c);
 
     void accept(struct device *dev, Net::Ipv4Header &ip_h, Net::TcpHeader &tcp_h);
     void on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net::TcpHeader &tcp_h, uint8_t *data, int data_len);
+    void on_tick(struct device *dev);
     void write(struct device *dev, uint32_t seq, uint32_t limit);
+    void send_rst(struct device *dev);
 
     /** TODO: define or delete functions below **/
     void availability();

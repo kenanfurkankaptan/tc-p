@@ -14,6 +14,8 @@ class Queue {
 
     int enqueue(uint8_t *array, int bytesToWrite);
     int dequeue(uint8_t *array, int bytesToRead);
+    int copy(uint8_t *array, int bytesToRead);
+    int remove(int bytesToRemove);
 
    private:
     std::mutex lockMutex;
