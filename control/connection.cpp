@@ -1,17 +1,5 @@
 #include "connection.h"
 
-// Connection::Connection(Connection &c) {
-//     this->state = c.state;
-//     this->send = c.send;
-//     this->recv = c.recv;
-//     this->ip = c.ip;
-//     this->tcp = c.tcp;
-//     this->incoming = c.incoming;
-//     this->unacked = c.unacked;
-//     this->closed = c.closed;
-//     this->closed_at = c.closed_at;
-// }
-
 void Connection::accept(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpHeader &tcp_h) {
     if (!tcp_h.syn()) {
         // only expected SYN packet
@@ -268,7 +256,7 @@ void Connection::on_tick(struct device *dev) {
     auto temp66 = *(std::next(this->timers.send_times.begin(), this->send.una));
     uint64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - temp66.second).count();
     bool should_retransmit = ([&]() {
-        return (waited_for > std::chrono::microseconds(1000000).count()) && (waited_for * (std::chrono::system_clock::period::num / std::chrono::system_clock::period::den) > 1.5 * this->timers.srtt);
+        return (waited_for > (uint64_t)std::chrono::microseconds(1000000).count()) && (waited_for * (std::chrono::system_clock::period::num / std::chrono::system_clock::period::den) > 1.5 * this->timers.srtt);
     }());
 
     if (should_retransmit) {
@@ -355,9 +343,7 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
 
     this->ip.payload_len = size;
 
-    uint8_t *unwritten = buf;
-    // uint8_t unwritten[size];
-    // std::copy(buf, buf + size, unwritten);
+    uint8_t *unwritten = buf + offset;
 
     this->ip.header_checksum = this->ip.compute_ipv4_checksum();
     this->ip.write_to_buff((char *)unwritten);
@@ -421,4 +407,12 @@ void Connection::send_rst(struct device *dev) {
 /** TODO: implement*/
 void Connection::availability() {
     return;
+}
+
+bool Connection::is_rcv_closed() {
+    return this->state == (State::TimeWait || State::CloseWait || State::LastAck || State::Closed || State::Closing) ? true : false;
+}
+
+bool Connection::is_snd_closed() {
+    return this->state == (State::FinWait1 || State::FinWait2 || State::Closing || State::LastAck || State::Closed) ? true : false;
 }

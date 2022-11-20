@@ -4,7 +4,7 @@
 
 #include <bitset>
 
-#include "utility.h"
+#include "../util/utility.h"
 
 namespace Net {
 

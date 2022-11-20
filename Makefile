@@ -1,10 +1,10 @@
 # the compiler: gcc for C program, define as g++ for C++
-CC = g++
+CXX = g++
 
 # compiler flags:
 # -g     - this flag adds debugging information to the executable file
 # -Wall  - this flag is used to turn on most compiler warnings
-CPPFLAGS = -g -Wall -std=c++20
+CPPFLAGS = -g -O -Wall -std=c++20
 
 # The build target 
 TARGET = tc++p
@@ -15,34 +15,36 @@ RM = rm -f
 # libraries to link
 LDFLAGS += -ltuntap++ -ltuntap
 
-
 # A directory to store object files
 OBJDIR :=objects
-
-SRC =*.cpp
-DEPS =*.h
-OBJS = main.o tcp_header.o ip_header.o connection.o queue.o utility.o controller.o
+BUILDDIR = build
 
 
-# Read this ugly line from the end:
-#  - grep all the .cpp files in SRC with wildcard
-#  - add the prefix $(OBJDIR) to all the file names with addprefix
-#  - replace .cpp in .o with patsubst
-# OBJS := $(patsubst %.cpp,%.o,$(addprefix $(OBJDIR)/,$(wildcard $(SRC))))
-# OBJS := $(patsubst %.cpp,%.o,$(wildcard $(SRC)))
+SRCDIRS := . net control util
 
-$(TARGET): $(OBJS)
-	$(CC) -o $(TARGET) $(OBJS) -o $@ $(LDFLAGS)
-	rm *.o
-	
-$(OBJS): %.o : %.cpp
+HEADERSUFFIX = .h
+SRCSUFFIX = .cpp
+OBJSUFFIX = .o
+
+
+SOURCES := $(foreach d,$(SRCDIRS),$(wildcard $(addprefix $d/*,$(SRCSUFFIX))))
+OBJECTS := $(addsuffix $(OBJSUFFIX),$(basename $(patsubst $(SRCDIRS)%,$(BUILDDIR)/%,$(SOURCES))))
+
+# link .o files
+$(TARGET): $(OBJECTS)
+	@$(CXX) $^ -o $@ $(LDFLAGS)
+	@$(RM) $(OBJECTS)
+	@echo "$(TARGET) is compiled successfully"
+
+
+# compile .cpp files
+$(OBJECTS): %.o : %.cpp
+	@$(CXX) $(CPPFLAGS) $(LDFLAGS) -c $< -o $@
 	@echo $@
-	$(CC) -c $(CPPFLAGS) $< $(LDFLAGS)
-
 
 clean:
-	$(RM) *.o $(TARGET)
+	$(RM) $(OBJECTS) $(TARGET)
 
 debug: 
-	@echo $(OBJS)
-	@echo $(SRC)
+	@echo $(SOURCES)
+	@echo $(OBJECTS)

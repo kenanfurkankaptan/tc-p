@@ -12,12 +12,12 @@
 #include <queue>
 #include <vector>
 
-#include "ip_header.h"
-#include "queue.h"
-#include "tcp_header.h"
+#include "../net/ip_header.h"
+#include "../net/tcp_header.h"
+#include "../queue.h"
+#include "../util/utility.h"
 #include "tuntap++.hh"
 #include "tuntap.h"
-#include "utility.h"
 
 enum State {
     Listen,
@@ -123,6 +123,9 @@ class Connection {
 
     /** TODO: define or delete functions below **/
     void availability();
+
+    bool is_rcv_closed();
+    bool is_snd_closed();
 };
 
 #endif /* CONNECTION_H */

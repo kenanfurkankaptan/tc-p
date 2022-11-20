@@ -30,7 +30,7 @@ Controller::~Controller() {
     // tuntap_release(dev);
     // tuntap_destroy(dev);
 
-    delete dev;
+    // delete dev;
     for (ConnectionInfo val : connection_list) {
         delete val.connection;
     }
