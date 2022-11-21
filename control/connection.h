@@ -97,7 +97,7 @@ class Connection {
    public:
     std::mutex lockMutex;
 
-    State state = Listen;
+    State state = State::Listen;
     SendSequenceSpace send;
     RecvSequenceSpace recv;
     Net::Ipv4Header ip;
@@ -120,6 +120,11 @@ class Connection {
     void on_tick(struct device *dev);
     void write(struct device *dev, uint32_t seq, uint32_t limit);
     void send_rst(struct device *dev);
+
+    bool is_in_synchronized_state();
+
+    bool sequence_number_check(int slen, int seqn, int wend);
+    bool acknowledged_number_check(int ackn);
 
     /** TODO: define or delete functions below **/
     void availability();

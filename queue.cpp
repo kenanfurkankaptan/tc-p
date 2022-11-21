@@ -22,10 +22,10 @@ int Queue::dequeue(uint8_t *array, int bytesToRead) {
     return bytesToRead;
 }
 
-int Queue::copy(uint8_t *array, int bytesToRead) {
+int Queue::copy_from(uint8_t *array, int bytesToRead, int offset) {
     std::lock_guard<std::mutex> lock(lockMutex);
 
-    std::copy_n(data.begin(), bytesToRead, array);
+    std::copy_n(data.begin() + offset, bytesToRead, array);
     return bytesToRead;
 }
 

@@ -14,7 +14,7 @@ class Queue {
 
     int enqueue(uint8_t *array, int bytesToWrite);
     int dequeue(uint8_t *array, int bytesToRead);
-    int copy(uint8_t *array, int bytesToRead);
+    int copy_from(uint8_t *array, int bytesToRead, int offset = 0);
     int remove(int bytesToRemove);
 
    private:

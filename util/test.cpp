@@ -65,5 +65,5 @@ void test_connection(Connection &connection) {
     std::cout << "src port: " << connection.tcp.source_port << std::endl;
     std::cout << "dst ip: " << connection.ip.destination << std::endl;
     std::cout << "dst port: " << connection.tcp.destination_port << std::endl;
-    std::cout << "state: " << connection.state << std::endl;
+    // std::cout << "state: " << connection.state << std::endl;
 }
