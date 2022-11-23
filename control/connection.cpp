@@ -40,6 +40,43 @@ void Connection::accept(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpHead
     return;
 }
 
+void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
+    uint16_t iss = 0;
+    uint16_t wnd = 1024;
+
+    this->state = State::SynSent;
+    this->recv = RecvSequenceSpace();
+
+    this->send = SendSequenceSpace{iss, uint32_t(iss + 1), wnd, false, 0, 0, iss};
+    this->ip = Net::Ipv4Header();
+    ip.source = src_ip;
+    ip.destination = dst_ip;
+
+    this->tcp = Net::TcpHeader();
+    tcp.destination_port = dst_port;
+    tcp.source_port = src_port;
+    tcp.acknowledgment_number = 0;
+    tcp.window_size = wnd;
+
+    // tcp.options =
+
+    this->incoming = Queue();
+    this->unacked = Queue();
+    this->closed = false;
+    this->closed_at = 0;
+    //         timers: Timers {
+    //             send_times: Default::default(),
+    //             srtt: time::Duration::from_secs(1 * 60).as_secs_f64(),
+    //         },
+    //     };
+
+    // needs to start establishing connection
+    this->tcp.syn(true);
+    this->write(dev, this->send.nxt, 0);
+
+    return;
+}
+
 void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpHeader &tcp_h, uint8_t *data, int data_len) {
     uint32_t seqn = tcp_h.sequence_number;            // sequence number
     uint32_t ackn = tcp_h.acknowledgment_number;      // ack number
@@ -58,17 +95,18 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
         if (tcp_h.rst()) {
             return;
         } else {
-            return send_rst(dev);
+            return send_rst(dev, tcp_h);
         }
     } else if (this->state == State::Listen) {
         // we only expect syn packet
         if (tcp_h.rst())
             return;
         else if (tcp_h.ack())
-            return send_rst(dev);
-
+            return send_rst(dev, tcp_h);
         else if (tcp_h.syn())
             /** TODO: check security/compartment and SEG.PRC */
+
+            // TODO: refactor accept
             return this->accept(dev, ip_h, tcp_h);
         else
             return;
@@ -77,7 +115,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
 
         if (tcp_h.ack()) {
             /** If SEG.ACK =< ISS, or SEG.ACK > SND.NXT, send a reset */
-            if ((tcp_h.acknowledgment_number <= send.iss) || (tcp_h.acknowledgment_number > send.nxt)) return send_rst(dev);
+            if (wrapping_lt(send.iss - 1, tcp_h.acknowledgment_number) || wrapping_lt(tcp_h.acknowledgment_number, send.iss)) return send_rst(dev, tcp_h);
 
             /** If SND.UNA =< SEG.ACK =< SND.NXT then the ACK is acceptable. */
             is_ack_acceptable = is_between_wrapped(this->send.una - 1, ackn, this->send.nxt + 1);
@@ -108,10 +146,13 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
             if (this->send.una > this->send.iss) {
                 return this->write(dev, this->send.nxt, 0);
             } else {
+                this->state = State::SynRcvd;
                 this->tcp.syn(true);
                 return this->write(dev, this->send.iss, 0);
             }
         }
+        if (!tcp.syn() && !tcp.rst()) return;
+
         return;
     }
 
@@ -142,21 +183,33 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
 
         if (tcp_h.rst()) {
             if (this->state == State::SynRcvd) {
-                /** TODO: remove retransmission queue */
+                // TODO: fix passive open
+                bool passive_open = true;
                 /*
                 If this connection was initiated with a passive OPEN (i.e.,
                 came from the LISTEN state), then return this connection to
                 LISTEN state and return.
-                If this connection was initiated with an active OPEN (i.e., came
+                */
+                if (passive_open) {
+                    this->state = State::Listen;
+                    return;
+                }
+                /* If this connection was initiated with an active OPEN (i.e., came
                 from SYN-SENT state) then the connection was refused, enter CLOSED
                 state and return.
                 */
-                this->state = State::Listen;
+                else {
+                    this->unacked.clear();
+                    this->state = State::Closed;
+                    return;
+                }
 
             } else if ((state == State::Estab) || (state == State::FinWait1) || (state == State::FinWait2) || (state == State::CloseWait)) {
                 /** TODO: flush all queue */
+                /** TODO: delete tcb */
                 this->state = State::Closed;
             } else if ((state == State::Closing) || (state == State::LastAck) || (state == State::TimeWait)) {
+                /** TODO: delete tcb */
                 this->state = State::Closed;
             }
         }
@@ -164,7 +217,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
         /** TODO: check security/compartment and SEG.PRC */
 
         if (tcp_h.syn()) {
-            this->send_rst(dev);
+            this->send_rst(dev, tcp_h);
 
             /** TODO: flush */
             return;
@@ -179,7 +232,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                     // and we have only one byte (the SYN)
                     this->state = State::Estab;
                 } else {
-                    /** TODO: RST : <SEQ=SEH.ACK><CTL=RST> */
+                    send_rst(dev, tcp_h);
                 }
             }
             if ((state == State::Estab) || (state == State::FinWait1) || (state == State::FinWait2) || (state == State::CloseWait) || (state == State::Closing)) {
@@ -219,11 +272,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
 
                     //----------------------------------------------------------------------------------
 
-                    // std::cout << "this->send.nxt: " << this->send.nxt << std::endl;
-                    // std::cout << "ackn: " << ackn << std::endl;
-
                     this->send.una = ackn;
-                    /** TODO: if unacked empty and waiting flush, notify */
                     /** TODO: update window */
                 }
 
@@ -235,12 +284,14 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                     }
                 }
                 if (this->state == State::FinWait2) {
-                    /** TODO: ??? */
                     /*
                     In addition to the processing for the ESTABLISHED state, if
                     the retransmission queue is empty, the user's CLOSE can be
                     acknowledged ("ok") but do not delete the TCB.
                     */
+                    if (unacked.data.size() == 0) {
+                        std::cout << "the user's CLOSE is acknowledged" << std::endl;
+                    }
                 }
                 if (this->state == State::Closing) {
                     if (this->send.una == closed_at + 1) {
@@ -403,6 +454,35 @@ void Connection::on_tick(struct device *dev) {
     return;
 }
 
+// TODO: TEST
+void Connection::flush(struct device *dev) {
+    uint32_t nunacked_data = (closed_at != 0 ? closed_at : this->send.nxt) - this->send.una;
+    uint32_t nunsent_data = this->unacked.data.size() - nunacked_data;
+
+    // we should send new data if have new data and space in the window
+    if (nunsent_data == 0 && this->closed_at != 0) {
+        return;
+    }
+
+    uint32_t allowed = this->send.wnd - nunacked_data;
+    if (allowed == 0) {
+        return;
+    }
+
+    uint32_t send = std::min(nunsent_data, allowed);
+    if (send < allowed && this->closed && this->closed_at == 0) {
+        this->tcp.fin(true);
+        this->closed_at = this->send.una + this->unacked.data.size();
+    }
+
+    if (send == 0) {
+        return;
+    };
+
+    this->write(dev, this->send.nxt, send);
+}
+
+// TODO: implement sending large data in two segments
 void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     const uint32_t buf_len = 1500;
     uint8_t buf[buf_len] = {};
@@ -456,6 +536,8 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
         ++next_seq;
         this->tcp.fin(false);
     }
+    if (this->tcp.rst()) this->tcp.rst(false);
+
     if (wrapping_lt(this->send.nxt, next_seq)) {
         this->send.nxt = next_seq;
     }
@@ -465,33 +547,50 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     return;
 }
 
-void Connection::send_rst(struct device *dev) {
-    std::cout << "Send Reset" << std::endl;
+void Connection::send_rst(struct device *dev, Net::TcpHeader &tcp_h) {
+    std::cout << "Sending Reset" << std::endl;
 
     this->tcp.rst(true);
-    // TODO: fix sequence numbers here
-    // If the incoming segment has an ACK field, the reset takes its
-    // sequence number from the ACK field of the segment, otherwise the
-    // reset has sequence number zero and the ACK field is set to the sum
-    // of the sequence number and segment length of the incoming segment.
-    // The connection remains in the same state.
-    //
-    // TODO: handle synchronized RST
-    // 3.  If the connection is in a synchronized state (ESTABLISHED,
-    // FIN-WAIT-1, FIN-WAIT-2, CLOSE-WAIT, CLOSING, LAST-ACK, TIME-WAIT),
-    // any unacceptable segment (out of window sequence number or
-    // unacceptible acknowledgment number) must elicit only an empty
-    // acknowledgment segment containing the current send-sequence number
-    // and an acknowledgment indicating the next sequence number expected
-    // to be received, and the connection remains in the same state.
-    this->tcp.sequence_number = 0;
-    this->tcp.acknowledgment_number = 0;
+    this->tcp.ack(false);
+
+    // TODO: fix seq len
+    int seg_len = 0;
+
+    if (this->state == State::Closed) {
+        // write <SEQ=SEG.ACK><CTL=RST>
+        if (tcp_h.ack()) {
+            this->tcp.sequence_number = tcp_h.acknowledgment_number;
+        }
+        // write <SEQ=0><ACK=SEG.SEQ+SEG.LEN><CTL=RST,ACK>
+        else {
+            this->tcp.sequence_number = 0;
+            this->tcp.acknowledgment_number = tcp_h.sequence_number + seg_len;
+            this->tcp.ack(true);
+        }
+    } else if (!is_in_synchronized_state()) {
+        // write <SEQ=SEG.ACK><CTL=RST>
+        if (tcp_h.ack()) {
+            this->tcp.sequence_number = tcp_h.acknowledgment_number;
+        }
+        // write <SEQ=0><ACK=SEG.SEQ+SEG.LEN><CTL=RST,ACK>
+        else {
+            this->tcp.sequence_number = 0;
+            this->tcp.acknowledgment_number = tcp_h.sequence_number + seg_len;
+            this->tcp.ack(true);
+        }
+
+    } else {
+        this->tcp.acknowledgment_number = this->send.nxt;
+        this->tcp.ack(true);
+    }
+
     this->write(dev, this->send.nxt, 0);
+    this->tcp.ack(true);
     return;
 }
 
 bool Connection::is_in_synchronized_state() {
-    return (state != State::SynRcvd) || (state != State::SynSent);
+    return (state != State::Listen) || (state != State::SynRcvd) || (state != State::SynSent);
 }
 
 // first check that sequence numbers are valid (RFC 793 S3.3)
@@ -500,7 +599,7 @@ bool Connection::is_in_synchronized_state() {
 // RCV.NXT =< SEG.SEQ < RCV.NXT + RCV.WND
 // RCV.NXT =< SEG.SEQ + SEG.LEN-1 < RCV.NXT + RCV.WND
 //
-bool Connection::sequence_number_check(int slen, int seqn, int wend) {
+bool Connection::sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t wend) {
     if (slen == 0) {
         // zero-length segment has seperate rules for acceptance
         if (this->recv.wnd == 0) {

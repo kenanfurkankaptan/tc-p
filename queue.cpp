@@ -35,3 +35,12 @@ int Queue::remove(int bytesToRemove) {
     data.erase(data.begin(), data.begin() + bytesToRemove);
     return bytesToRemove;
 }
+
+int Queue::clear() {
+    std::lock_guard<std::mutex> lock(lockMutex);
+
+    int size = this->data.size();
+    this->data.clear();
+
+    return size;
+}

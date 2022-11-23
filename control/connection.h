@@ -116,21 +116,23 @@ class Connection {
     Connection() = default;
 
     void accept(struct device *dev, Net::Ipv4Header &ip_h, Net::TcpHeader &tcp_h);
+    void connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port);
+
     void on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net::TcpHeader &tcp_h, uint8_t *data, int data_len);
     void on_tick(struct device *dev);
+    void flush(struct device *dev);
+
     void write(struct device *dev, uint32_t seq, uint32_t limit);
-    void send_rst(struct device *dev);
+    void send_rst(struct device *dev, Net::TcpHeader &tcp_h);
+
+    bool sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t wend);
 
     bool is_in_synchronized_state();
-
-    bool sequence_number_check(int slen, int seqn, int wend);
-    bool acknowledged_number_check(int ackn);
+    bool is_rcv_closed();
+    bool is_snd_closed();
 
     /** TODO: define or delete functions below **/
     void availability();
-
-    bool is_rcv_closed();
-    bool is_snd_closed();
 };
 
 #endif /* CONNECTION_H */

@@ -24,7 +24,7 @@ class Ipv4Header {
 
     uint8_t options[40];
 
-    Ipv4Header() = default;
+    Ipv4Header();
     Ipv4Header(uint8_t *data, bool ntoh);
     Ipv4Header(std::istream &stream, bool ntoh);
 

@@ -9,7 +9,20 @@
 
 namespace Net {
 
-// Ipv4Header::Ipv4Header(){};
+Ipv4Header::Ipv4Header() {
+    this->ntoh = true;
+
+    this->ver_ihl = 0x45;
+    this->tos = 0x00;
+    this->payload_len = 40;
+    this->identification = 0;
+    this->flags_fo = 0x4000;
+    this->time_to_live = 64;
+    this->protocol = 6;
+    this->header_checksum = 0;
+    this->source = 0;
+    this->destination = 0;
+};
 
 Ipv4Header::Ipv4Header(std::istream &stream, bool ntoh) {
     this->ntoh = ntoh;

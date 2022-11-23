@@ -24,7 +24,7 @@ class TcpHeader {
 
     uint8_t options[40];
 
-    TcpHeader() = default;
+    TcpHeader();
     TcpHeader(uint8_t *data, bool ntoh);
     TcpHeader(std::istream &stream, bool ntoh);
 

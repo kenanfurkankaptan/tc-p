@@ -41,6 +41,24 @@ void Controller::listen_port(uint16_t port) {
     std::cout << "listenning port: " << port << std::endl;
 }
 
+void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) {
+    for (auto c : connection_list) {
+        if (dst_ip == c.dst_ip && src_ip == c.src_ip && dst_port == c.dst_port && src_port == c.src_port) {
+            c.connection->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), data.length());
+        }
+    }
+}
+
+void Controller::add_connection(ConnectionInfo connection_info) {
+    auto temp_ptr = new Connection();
+    connection_info.connection = temp_ptr;
+    this->connection_list.push_back(connection_info);
+
+    temp_ptr->connect(dev, connection_info.src_ip, connection_info.dst_ip, connection_info.src_port, connection_info.dst_port);
+
+    std::cout << "start connection on port: " << connection_info.dst_port << std::endl;
+}
+
 void Controller::packet_loop() {
     /** TODO: fix */
     // wake up every 1 ms
@@ -51,7 +69,7 @@ void Controller::packet_loop() {
             for (auto c : connection_list) {
                 std::lock_guard<std::mutex> guard(c.connection->lockMutex);
 
-                c.connection->on_tick(dev);
+                // c.connection->on_tick(dev);
             }
         }
     });
@@ -74,8 +92,6 @@ void Controller::packet_loop() {
         std::istream tcp_packet(&tcp_buf);
 
         /** TODO: consider memmove */
-        // uint8_t buff2[1500];
-        // std::memcpy(&buff2, &buff[ip.size()], sizeof(buff) - ip.size());
         Net::TcpHeader tcp = Net::TcpHeader(tcp_packet, true);
 
         uint8_t *data = (uint8_t *)buff + ip.get_size() + tcp.get_header_len();
@@ -106,14 +122,6 @@ void Controller::packet_loop() {
                 // port is not accepted
                 std::cout << "port: " << temp_connection.dst_port << " is not accepted" << std::endl;
             }
-        }
-    }
-}
-
-void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) {
-    for (auto c : connection_list) {
-        if (dst_ip == c.dst_ip && src_ip == c.src_ip && dst_port == c.dst_port && src_port == c.src_port) {
-            c.connection->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), data.length());
         }
     }
 }
