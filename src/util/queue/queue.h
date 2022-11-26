@@ -8,6 +8,8 @@
 class Queue {
    public:
     /** TODO: consider constant sized container */
+    /** TODO: limit queue sizes , it should not exceed 2^32 */
+
     std::deque<uint8_t> data;
 
     void operator=(const Queue &q);

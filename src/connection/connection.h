@@ -12,9 +12,9 @@
 #include <queue>
 #include <vector>
 
-#include "../net/ip_header.h"
-#include "../net/tcp_header.h"
-#include "../queue.h"
+#include "../net/ip_header/ip_header.h"
+#include "../net/tcp_header/tcp_header.h"
+#include "../util/queue/queue.h"
 #include "../util/utility.h"
 #include "tuntap++.hh"
 #include "tuntap.h"

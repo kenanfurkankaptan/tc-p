@@ -1,9 +1,9 @@
 #include <bitset>
 #include <iostream>
 
-#include "../control/connection.h"
-#include "../net/ip_header.h"
-#include "../net/tcp_header.h"
+#include "../connection/connection.h"
+#include "../net/ip_header/ip_header.h"
+#include "../net/tcp_header/tcp_header.h"
 
 std::string toIpAddrString(int32_t ip) {
     unsigned char bytes[4];

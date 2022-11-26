@@ -26,11 +26,6 @@ void Connection::accept(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpHead
     this->unacked = Queue();
     this->closed = false;
     this->closed_at = 0;
-    //         timers: Timers {
-    //             send_times: Default::default(),
-    //             srtt: time::Duration::from_secs(1 * 60).as_secs_f64(),
-    //         },
-    //     };
 
     // needs to start establishing connection
     this->tcp.syn(true);
@@ -47,7 +42,7 @@ void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, u
     this->state = State::SynSent;
     this->recv = RecvSequenceSpace();
 
-    this->send = SendSequenceSpace{iss, uint32_t(iss + 1), wnd, false, 0, 0, iss};
+    this->send = SendSequenceSpace{iss, iss, wnd, false, 0, 0, iss};
     this->ip = Net::Ipv4Header();
     ip.source = src_ip;
     ip.destination = dst_ip;
@@ -58,17 +53,10 @@ void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, u
     tcp.acknowledgment_number = 0;
     tcp.window_size = wnd;
 
-    // tcp.options =
-
     this->incoming = Queue();
     this->unacked = Queue();
     this->closed = false;
     this->closed_at = 0;
-    //         timers: Timers {
-    //             send_times: Default::default(),
-    //             srtt: time::Duration::from_secs(1 * 60).as_secs_f64(),
-    //         },
-    //     };
 
     // needs to start establishing connection
     this->tcp.syn(true);
@@ -371,6 +359,8 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
     return;
 }
 
+// TODO: fix retransmission of SYN packet
+// TODO: check retransmission of zero data len packets such as ACK FIN RST
 void Connection::on_tick(struct device *dev) {
     if ((state == State::Closed) || (state == State::TimeWait) || (state == State::FinWait2)) {
         // we have shutdown our write side and the other side acked, no need to (re)transmit anything
@@ -380,17 +370,12 @@ void Connection::on_tick(struct device *dev) {
     uint32_t nunacked_data = (closed_at != 0 ? closed_at : this->send.nxt) - this->send.una;
     uint32_t nunsent_data = this->unacked.data.size() - nunacked_data;
 
-    // std::cout << "this->send.nxt: " << this->send.nxt << std::endl;
-    // std::cout << "this->send.una: " << this->send.una << std::endl;
-
-    // std::cout << "nunacked_data: " << nunacked_data << std::endl;
-    // std::cout << "nunsent_data: " << nunsent_data << std::endl;
-
-    /** TODO: TEST */
-    auto temp66 = *(std::next(this->timers.send_times.begin(), this->send.una));
+    auto temp66 = *(std::next(this->timers.send_times.begin(), this->send.una - this->send.iss));
     uint64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - temp66.second).count();
+
     bool should_retransmit = ([&]() {
-        return (waited_for > (uint64_t)std::chrono::microseconds(1000000).count()) && (waited_for * (std::chrono::system_clock::period::num / std::chrono::system_clock::period::den) > 1.5 * this->timers.srtt);
+        return (waited_for > (uint64_t)std::chrono::microseconds(1000000).count()) &&
+               (waited_for * (std::chrono::system_clock::period::num / std::chrono::system_clock::period::den) > 1.5 * this->timers.srtt);
     }());
 
     if (should_retransmit) {
@@ -419,6 +404,14 @@ void Connection::on_tick(struct device *dev) {
             return;
         }
 
+        std::cout << "this->unacked.data.size() " << this->unacked.data.size() << std::endl;
+
+        std::cout << "this->send.nxt " << this->send.nxt << std::endl;
+        std::cout << "this->send.una " << this->send.una << std::endl;
+
+        std::cout << "nunacked_data " << nunacked_data << std::endl;
+        std::cout << "nunsent_data " << nunsent_data << std::endl;
+
         uint32_t send = std::min(nunsent_data, allowed);
         if (send < allowed && this->closed && this->closed_at == 0) {
             this->tcp.fin(true);
@@ -428,24 +421,6 @@ void Connection::on_tick(struct device *dev) {
         if (send == 0) {
             return;
         };
-
-        // std::cout << "this->send.nxt" << std::endl;
-        // std::cout << this->send.nxt << std::endl;
-        // std::cout << "this->send.una" << std::endl;
-        // std::cout << this->send.una << std::endl;
-
-        // std::cout << "this->unacked.data.size()" << std::endl;
-        // std::cout << this->unacked.data.size() << std::endl;
-
-        // std::cout << "nunacked_data" << std::endl;
-        // std::cout << nunacked_data << std::endl;
-        // std::cout << "nunsent_data" << std::endl;
-        // std::cout << nunsent_data << std::endl;
-
-        // std::cout << "send" << std::endl;
-        // std::cout << send << std::endl;
-        // std::cout << "allowed" << std::endl;
-        // std::cout << allowed << std::endl;
 
         this->write(dev, this->send.nxt, send);
     }

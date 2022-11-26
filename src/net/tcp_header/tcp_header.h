@@ -4,7 +4,7 @@
 
 #include <iostream>
 
-#include "ip_header.h"
+#include "../ip_header/ip_header.h"
 
 namespace Net {
 

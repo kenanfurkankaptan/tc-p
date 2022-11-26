@@ -5,7 +5,7 @@
 #include <map>
 #include <vector>
 
-#include "connection.h"
+#include "../connection/connection.h"
 
 class ConnectionInfo {
    public:
