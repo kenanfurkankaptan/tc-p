@@ -16,7 +16,7 @@ Controller::Controller() {
     if (tuntap_start(dev, TUNTAP_MODE_TUNNEL, TUNTAP_ID_ANY) == -1) {
         return;
     }
-    if (tuntap_set_ip(dev, "192.168.0.1", 24) == -1) {
+    if (tuntap_set_ip(dev, "192.168.0.2", 24) == -1) {
         return;
     }
     if (tuntap_up(dev) == -1) {
@@ -69,7 +69,7 @@ void Controller::packet_loop() {
             for (auto c : connection_list) {
                 std::lock_guard<std::mutex> guard(c.connection->lockMutex);
 
-                // c.connection->on_tick(dev);
+                c.connection->on_tick(dev);
             }
         }
     });
@@ -83,8 +83,13 @@ void Controller::packet_loop() {
         std::istream ip_packet(&ip_buf);
         Net::Ipv4Header ip = Net::Ipv4Header(ip_packet, true);
 
+        if (ip.ip_version() != 4) {
+            std::cout << "not ipv4 packet: " << std::bitset<8>(ip.ip_version()) << std::endl;
+            continue;
+        }
+
         if (ip.protocol != 6) {
-            std::cout << "not tcp  packet" << std::endl;
+            std::cout << "not tcp packet" << std::endl;
             continue;
         }
 

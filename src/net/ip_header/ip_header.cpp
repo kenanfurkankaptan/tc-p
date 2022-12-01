@@ -111,7 +111,7 @@ void Ipv4Header::write_to_buff(char *buff) {
 }
 
 uint8_t Ipv4Header::ip_version() const {
-    return (ver_ihl >> 4) & 0xF0;
+    return (ver_ihl & 0xF0) >> 4;
 }
 
 uint16_t Ipv4Header::get_size() const {

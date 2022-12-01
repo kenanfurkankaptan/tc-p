@@ -89,7 +89,7 @@ struct RecvSequenceSpace {
 };
 
 struct Timer {
-    double srtt;
+    double srtt;  // Smoothed Round Trip Time
     std::map<uint32_t, std::chrono::_V2::system_clock::time_point> send_times;
 };
 

@@ -182,7 +182,8 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                     this->state = State::Listen;
                     return;
                 }
-                /* If this connection was initiated with an active OPEN (i.e., came
+                /*
+                If this connection was initiated with an active OPEN (i.e., came
                 from SYN-SENT state) then the connection was refused, enter CLOSED
                 state and return.
                 */
@@ -246,9 +247,10 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                                 auto sent = itr->second;
                                 if (is_between_wrapped(this->send.una, seq, ackn)) {
                                     auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - sent).count();
+                                    /** SRTT = ( ALPHA * SRTT ) + ((1-ALPHA) * RTT)
+                                     * Alpha is taken 0.8 */
                                     this->timers.srtt = 0.8 * this->timers.srtt + (1.0 - 0.8) * elapsed;
                                     return true;
-
                                 } else {
                                     return false;
                                 }
@@ -301,7 +303,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
         }
 
         if (tcp_h.urg()) {
-            /** TODO: implement */
+            /** TODO: implement later */
         }
 
         if (data_len > 0) {
@@ -359,7 +361,6 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
     return;
 }
 
-// TODO: fix retransmission of SYN packet
 // TODO: check retransmission of zero data len packets such as ACK FIN RST
 void Connection::on_tick(struct device *dev) {
     if ((state == State::Closed) || (state == State::TimeWait) || (state == State::FinWait2)) {
@@ -373,17 +374,34 @@ void Connection::on_tick(struct device *dev) {
     auto temp66 = *(std::next(this->timers.send_times.begin(), this->send.una - this->send.iss));
     uint64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - temp66.second).count();
 
+    /* RTO = min[UBOUND,max[LBOUND,(BETA*SRTT)]]
+     * Beta is taken as 1.5
+     * Upper limit is 1 min
+     * Lower limit is 1 sec
+     */
     bool should_retransmit = ([&]() {
-        return (waited_for > (uint64_t)std::chrono::microseconds(1000000).count()) &&
-               (waited_for * (std::chrono::system_clock::period::num / std::chrono::system_clock::period::den) > 1.5 * this->timers.srtt);
+        return ((waited_for > (uint64_t)std::chrono::seconds(1).count()) && (waited_for > 1.5 * this->timers.srtt)) ||
+               (waited_for > (uint64_t)std::chrono::seconds(60).count());
     }());
+
+    // std::cout << "srtt: " << this->timers.srtt << std::endl;
+    // std::cout << "send_times size: " << this->timers.send_times.size() << std::endl;
+
+    // std::cout << "should_retransmit: " << should_retransmit << std::endl;
+    // std::cout << "waited_for: " << waited_for << std::endl;
 
     if (should_retransmit) {
         // we should retransmit!
+
+        /** Resend syn packet */
+        if (this->state == State::SynSent) {
+            this->tcp.syn(true);
+            this->write(dev, this->send.una, 0);
+        }
+
         uint32_t send = std::min((uint32_t)this->unacked.data.size(), (uint32_t)this->send.wnd);
 
         if (send < this->send.wnd && this->closed) {
-            // can we include the FIN?
             this->tcp.fin(true);
             this->closed_at = this->send.una + this->unacked.data.size();
         }
@@ -394,15 +412,15 @@ void Connection::on_tick(struct device *dev) {
 
         this->write(dev, this->send.una, send);
     } else {
+        // we havent sent data yet
+        if ((this->state == State::SynRcvd) && (this->state == State::SynSent) && (this->state == State::SynRcvd)) return;
+        if (this->unacked.data.size() == 0) return;
+
         // we should send new data if have new data and space in the window
-        if (nunsent_data == 0 && this->closed_at != 0) {
-            return;
-        }
+        if (nunsent_data == 0 && this->closed_at != 0) return;
 
         uint32_t allowed = this->send.wnd - nunacked_data;
-        if (allowed == 0) {
-            return;
-        }
+        if (allowed == 0) return;
 
         std::cout << "this->unacked.data.size() " << this->unacked.data.size() << std::endl;
 
@@ -516,7 +534,7 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     if (wrapping_lt(this->send.nxt, next_seq)) {
         this->send.nxt = next_seq;
     }
-    this->timers.send_times.insert({seq, std::chrono::high_resolution_clock::now()});
+    this->timers.send_times[seq] = std::chrono::high_resolution_clock::now();
 
     tuntap_write(dev, buf, payload_ends_at);
     return;
