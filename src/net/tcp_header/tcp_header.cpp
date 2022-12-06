@@ -48,7 +48,7 @@ TcpHeader::TcpHeader(std::istream &stream, bool ntoh) {
     }
 }
 
-TcpHeader::TcpHeader(uint8_t *data, bool ntoh) {
+TcpHeader::TcpHeader(const uint8_t *data, bool ntoh) {
     this->ntoh = ntoh;
 
     source_port = data[1] << 8 | (data[2] & 0xFF);

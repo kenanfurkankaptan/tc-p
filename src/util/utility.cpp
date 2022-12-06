@@ -18,7 +18,7 @@ bool wrapping_lt(uint32_t lhs, uint32_t rhs) {
     /*
     for native data types such as int8/int16/int32 wrapping is provided by the hardware
     */
-    return (lhs - rhs) > (uint32_t)(1 << 31);
+    return (lhs - rhs) > ((uint32_t)1 << 31);
 };
 
 bool is_between_wrapped(uint32_t start, uint32_t x, uint32_t end) {

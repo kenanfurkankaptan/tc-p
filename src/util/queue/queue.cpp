@@ -36,10 +36,10 @@ int Queue::remove(int bytesToRemove) {
     return bytesToRemove;
 }
 
-int Queue::clear() {
+uint64_t Queue::clear() {
     std::lock_guard<std::mutex> lock(lockMutex);
 
-    int size = this->data.size();
+    uint64_t size = this->data.size();
     this->data.clear();
 
     return size;

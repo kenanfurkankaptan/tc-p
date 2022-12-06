@@ -89,7 +89,7 @@ struct RecvSequenceSpace {
 };
 
 struct Timer {
-    double srtt;  // Smoothed Round Trip Time
+    int64_t srtt;  // Smoothed Round Trip Time
     std::map<uint32_t, std::chrono::_V2::system_clock::time_point> send_times;
 };
 
@@ -106,7 +106,7 @@ class Connection {
     Queue incoming;
     Queue unacked;  // unacked contains both sent and unsent data
     bool closed;
-    uint32_t closed_at;  // == 0 means it is not set
+    uint32_t closed_at = 0;  // == 0 means it is not set
 
     /*
     A copy or move assignment operator cannot be automatically generated
@@ -117,13 +117,14 @@ class Connection {
 
     void accept(struct device *dev, Net::Ipv4Header &ip_h, Net::TcpHeader &tcp_h);
     void connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port);
+    void close(struct device *dev);
 
     void on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net::TcpHeader &tcp_h, uint8_t *data, int data_len);
     void on_tick(struct device *dev);
     void flush(struct device *dev);
 
     void write(struct device *dev, uint32_t seq, uint32_t limit);
-    void send_rst(struct device *dev, Net::TcpHeader &tcp_h);
+    void send_rst(struct device *dev, const Net::TcpHeader &tcp_h);
 
     bool sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t wend);
 

@@ -65,6 +65,10 @@ void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, u
     return;
 }
 
+void Connection::close(struct device *dev) {
+    this->closed = true;
+}
+
 void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpHeader &tcp_h, uint8_t *data, int data_len) {
     uint32_t seqn = tcp_h.sequence_number;            // sequence number
     uint32_t ackn = tcp_h.acknowledgment_number;      // ack number
@@ -119,7 +123,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
         }
         /** TODO: check security/compartment and SEG.PRC */
 
-        if (is_ack_acceptable != (true || NULL)) return;
+        if ((is_ack_acceptable != true) || (is_ack_acceptable != NULL)) return;
         /** This step should be reached only if the ACK is ok, or there is
         no ACK, and it the segment did not contain a RST.
         */
@@ -249,7 +253,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                                     auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - sent).count();
                                     /** SRTT = ( ALPHA * SRTT ) + ((1-ALPHA) * RTT)
                                      * Alpha is taken 0.8 */
-                                    this->timers.srtt = 0.8 * this->timers.srtt + (1.0 - 0.8) * elapsed;
+                                    this->timers.srtt = ((int64_t)0.8 * this->timers.srtt + (int64_t)(1.0 - 0.8) * elapsed);
                                     return true;
                                 } else {
                                     return false;
@@ -352,8 +356,12 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                 this->state = State::TimeWait;
             else if (this->state == (State::FinWait2))
                 this->state = State::TimeWait;
-            else if (this->state == (State::CloseWait))
-                this->state = State::CloseWait;
+            else if (this->state == (State::TimeWait))
+                std::cout << "TODO: Restart the 2 MSL time-wait timeout." << std::endl;
+            else if ((this->state == State::CloseWait) || (this->state == State::Closing) || (this->state == State::LastAck))
+                return;
+            else
+                std::cout << "error: FIN received in " << this->state << std::endl;
 
             return;
         }
@@ -369,19 +377,21 @@ void Connection::on_tick(struct device *dev) {
     }
 
     uint32_t nunacked_data = (closed_at != 0 ? closed_at : this->send.nxt) - this->send.una;
-    uint32_t nunsent_data = this->unacked.data.size() - nunacked_data;
+    uint32_t nunsent_data = (uint32_t)this->unacked.data.size() - nunacked_data;
 
     auto temp66 = *(std::next(this->timers.send_times.begin(), this->send.una - this->send.iss));
-    uint64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - temp66.second).count();
+    int64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - temp66.second).count();
 
     /* RTO = min[UBOUND,max[LBOUND,(BETA*SRTT)]]
      * Beta is taken as 1.5
      * Upper limit is 1 min
      * Lower limit is 1 sec
      */
+
+    // TODO: fix std::chrono::microseconds(60 * 10 ^ 6).count()
     bool should_retransmit = ([&]() {
-        return ((waited_for > (uint64_t)std::chrono::seconds(1).count()) && (waited_for > 1.5 * this->timers.srtt)) ||
-               (waited_for > (uint64_t)std::chrono::seconds(60).count());
+        return ((waited_for > std::chrono::microseconds(1 * 10 ^ 6).count()) && (waited_for > (((int64_t)1.5) * this->timers.srtt))) ||
+               (waited_for > std::chrono::microseconds(60 * 10 ^ 6).count());
     }());
 
     // std::cout << "srtt: " << this->timers.srtt << std::endl;
@@ -402,8 +412,15 @@ void Connection::on_tick(struct device *dev) {
         uint32_t send = std::min((uint32_t)this->unacked.data.size(), (uint32_t)this->send.wnd);
 
         if (send < this->send.wnd && this->closed) {
+            std::cout << "Resend FIN" << std::endl;
+            std::cout << "waited_for: " << waited_for << std::endl;
+            std::cout << " std::chrono::microseconds(60 * 10 ^ 6).count(): " << std::chrono::microseconds(60 * 10 ^ 6).count() << std::endl;
+            std::cout << "std::chrono::microseconds(1 * 10 ^ 6).count(): " << std::chrono::microseconds(1 * 10 ^ 6).count() << std::endl;
+
             this->tcp.fin(true);
-            this->closed_at = this->send.una + this->unacked.data.size();
+            this->closed_at = this->send.una + (uint32_t)this->unacked.data.size();
+
+            abort();
         }
 
         if (send == 0) {
@@ -413,7 +430,7 @@ void Connection::on_tick(struct device *dev) {
         this->write(dev, this->send.una, send);
     } else {
         // we havent sent data yet
-        if ((this->state == State::SynRcvd) && (this->state == State::SynSent) && (this->state == State::SynRcvd)) return;
+        if ((this->state == State::SynRcvd) || (this->state == State::SynSent)) return;
         if (this->unacked.data.size() == 0) return;
 
         // we should send new data if have new data and space in the window
@@ -422,18 +439,26 @@ void Connection::on_tick(struct device *dev) {
         uint32_t allowed = this->send.wnd - nunacked_data;
         if (allowed == 0) return;
 
-        std::cout << "this->unacked.data.size() " << this->unacked.data.size() << std::endl;
+        // std::cout << "this->unacked.data.size() " << this->unacked.data.size() << std::endl;
 
-        std::cout << "this->send.nxt " << this->send.nxt << std::endl;
-        std::cout << "this->send.una " << this->send.una << std::endl;
+        // std::cout << "this->send.nxt " << this->send.nxt << std::endl;
+        // std::cout << "this->send.una " << this->send.una << std::endl;
 
-        std::cout << "nunacked_data " << nunacked_data << std::endl;
-        std::cout << "nunsent_data " << nunsent_data << std::endl;
+        // std::cout << "nunacked_data " << nunacked_data << std::endl;
+        // std::cout << "nunsent_data " << nunsent_data << std::endl;
 
         uint32_t send = std::min(nunsent_data, allowed);
+
         if (send < allowed && this->closed && this->closed_at == 0) {
+            // if (this->state == State::Estab)
+            //     this->state = State::FinWait1;
+            // else if (this->state == State::CloseWait)
+            //     this->state = State::LastAck;
+            // else
+            //     std::cout << "send fin error: unimplemented!!" << std::endl;
+
             this->tcp.fin(true);
-            this->closed_at = this->send.una + this->unacked.data.size();
+            this->closed_at = this->send.una + (uint32_t)this->unacked.data.size();
         }
 
         if (send == 0) {
@@ -450,7 +475,7 @@ void Connection::on_tick(struct device *dev) {
 // TODO: TEST
 void Connection::flush(struct device *dev) {
     uint32_t nunacked_data = (closed_at != 0 ? closed_at : this->send.nxt) - this->send.una;
-    uint32_t nunsent_data = this->unacked.data.size() - nunacked_data;
+    uint32_t nunsent_data = (uint32_t)this->unacked.data.size() - nunacked_data;
 
     // we should send new data if have new data and space in the window
     if (nunsent_data == 0 && this->closed_at != 0) {
@@ -465,7 +490,7 @@ void Connection::flush(struct device *dev) {
     uint32_t send = std::min(nunsent_data, allowed);
     if (send < allowed && this->closed && this->closed_at == 0) {
         this->tcp.fin(true);
-        this->closed_at = this->send.una + this->unacked.data.size();
+        this->closed_at = this->send.una + (uint32_t)this->unacked.data.size();
     }
 
     if (send == 0) {
@@ -496,9 +521,9 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     this->tcp.set_header_len(20);
 
     const uint32_t max_data = std::min(limit, (uint32_t)unacked.data.size());
-    const uint32_t size = std::min((uint32_t)buf_len, this->tcp.get_header_len() + ip.get_size() + max_data);
+    const uint32_t size = std::min(buf_len, (uint32_t)this->tcp.get_header_len() + (uint32_t)ip.get_size() + max_data);
 
-    this->ip.payload_len = size;
+    this->ip.payload_len = (uint16_t)size;
 
     uint8_t *unwritten = buf;
 
@@ -540,7 +565,7 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     return;
 }
 
-void Connection::send_rst(struct device *dev, Net::TcpHeader &tcp_h) {
+void Connection::send_rst(struct device *dev, const Net::TcpHeader &tcp_h) {
     std::cout << "Sending Reset" << std::endl;
 
     this->tcp.rst(true);
@@ -583,7 +608,7 @@ void Connection::send_rst(struct device *dev, Net::TcpHeader &tcp_h) {
 }
 
 bool Connection::is_in_synchronized_state() {
-    return (state != State::Listen) || (state != State::SynRcvd) || (state != State::SynSent);
+    return !((state == State::Listen) || (state == State::SynRcvd) || (state == State::SynSent));
 }
 
 // first check that sequence numbers are valid (RFC 793 S3.3)

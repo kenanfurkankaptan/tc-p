@@ -25,7 +25,7 @@ class TcpHeader {
     uint8_t options[40];
 
     TcpHeader();
-    TcpHeader(uint8_t *data, bool ntoh);
+    TcpHeader(const uint8_t *data, bool ntoh);
     TcpHeader(std::istream &stream, bool ntoh);
 
     void write_to_buff(char *buff);

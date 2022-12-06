@@ -7,10 +7,10 @@
 
 std::string toIpAddrString(int32_t ip) {
     unsigned char bytes[4];
-    bytes[0] = ip & 0xFF;
-    bytes[1] = (ip >> 8) & 0xFF;
-    bytes[2] = (ip >> 16) & 0xFF;
-    bytes[3] = (ip >> 24) & 0xFF;
+    bytes[0] = (unsigned char)(ip & 0xFF);
+    bytes[1] = (unsigned char)(ip >> 8) & 0xFF;
+    bytes[2] = (unsigned char)(ip >> 16) & 0xFF;
+    bytes[3] = (unsigned char)(ip >> 24) & 0xFF;
     printf("%d.%d.%d.%d\n", bytes[3], bytes[2], bytes[1], bytes[0]);
 
     return "";
@@ -60,7 +60,7 @@ void test_tcp_options(Net::TcpHeader &tcp) {
 
 //-------------------------------------------------------------------------------------------
 
-void test_connection(Connection &connection) {
+void test_connection(const Connection &connection) {
     std::cout << "src ip: " << connection.ip.source << std::endl;
     std::cout << "src port: " << connection.tcp.source_port << std::endl;
     std::cout << "dst ip: " << connection.ip.destination << std::endl;

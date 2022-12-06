@@ -10,7 +10,10 @@ class Queue {
     /** TODO: consider constant sized container */
     /** TODO: limit queue sizes , it should not exceed 2^32 */
 
-    std::deque<uint8_t> data;
+    std::deque<uint8_t> data = {};
+
+    Queue();
+    ~Queue();
 
     void operator=(const Queue &q);
 
@@ -18,7 +21,7 @@ class Queue {
     int dequeue(uint8_t *array, int bytesToRead);
     int copy_from(uint8_t *array, int bytesToRead, int offset = 0);
     int remove(int bytesToRemove);
-    int clear();
+    uint64_t clear();
 
    private:
     std::mutex lockMutex;

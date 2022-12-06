@@ -15,12 +15,7 @@ class ConnectionInfo {
     uint16_t dst_port;
     Connection *connection;
 
-    ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
-        this->src_ip = src_ip;
-        this->dst_ip = dst_ip;
-        this->src_port = src_port;
-        this->dst_port = dst_port;
-    }
+    ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port);
 
     bool operator==(const ConnectionInfo &c) const {
         return this->dst_ip == c.dst_ip && this->src_ip == c.src_ip && this->dst_port == c.dst_port && this->src_port == c.src_port;

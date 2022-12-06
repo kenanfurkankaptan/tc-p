@@ -7,6 +7,15 @@
 #include <iostream>
 #include <thread>
 
+ConnectionInfo::ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
+    this->src_ip = src_ip;
+    this->dst_ip = dst_ip;
+    this->src_port = src_port;
+    this->dst_port = dst_port;
+
+    this->connection = nullptr;
+}
+
 Controller::Controller() {
     struct device *dev;
 
@@ -16,12 +25,15 @@ Controller::Controller() {
     if (tuntap_start(dev, TUNTAP_MODE_TUNNEL, TUNTAP_ID_ANY) == -1) {
         return;
     }
-    if (tuntap_set_ip(dev, "192.168.0.2", 24) == -1) {
+    if (tuntap_set_ip(dev, "192.168.0.1", 24) == -1) {
         return;
     }
     if (tuntap_up(dev) == -1) {
         return;
     }
+
+    connection_list = {};
+    listened_ports = {};
 }
 
 /** TODO: fix destroy */
@@ -31,9 +43,8 @@ Controller::~Controller() {
     // tuntap_destroy(dev);
 
     // delete dev;
-    for (ConnectionInfo val : connection_list) {
-        delete val.connection;
-    }
+    connection_list.clear();
+    listened_ports.clear();
 }
 
 void Controller::listen_port(uint16_t port) {
@@ -44,7 +55,8 @@ void Controller::listen_port(uint16_t port) {
 void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) {
     for (auto c : connection_list) {
         if (dst_ip == c.dst_ip && src_ip == c.src_ip && dst_port == c.dst_port && src_port == c.src_port) {
-            c.connection->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), data.length());
+            c.connection->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), (int)data.length());
+            c.connection->close(dev);
         }
     }
 }
@@ -60,7 +72,7 @@ void Controller::add_connection(ConnectionInfo connection_info) {
 }
 
 void Controller::packet_loop() {
-    /** TODO: fix */
+    /** TODO: refactor in a better way */
     // wake up every 1 ms
     std::thread timer_loop([&]() {
         while (true) {
@@ -75,7 +87,6 @@ void Controller::packet_loop() {
     });
 
     while (true) {
-        /** TODO: reset array memory */
         char buff[1500];
         tuntap_read(dev, buff, 1500);
 
