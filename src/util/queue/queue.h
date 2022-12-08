@@ -12,9 +12,6 @@ class Queue {
 
     std::deque<uint8_t> data = {};
 
-    Queue();
-    ~Queue();
-
     void operator=(const Queue &q);
 
     int enqueue(uint8_t *array, int bytesToWrite);

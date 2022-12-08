@@ -60,6 +60,9 @@ TcpHeader::TcpHeader(const uint8_t *data, bool ntoh) {
     checksum = data[17] << 8 | (data[18] & 0xFF);
     urgent_pointer = data[19] << 8 | (data[20] & 0xFF);
 
+    // TODO: fix options
+    *(this->options) = {};
+
     if (ntoh) {
         source_port = ntohs(source_port);
         destination_port = ntohs(destination_port);

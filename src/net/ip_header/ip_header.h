@@ -22,7 +22,7 @@ class Ipv4Header {
     uint32_t source;
     uint32_t destination;
 
-    uint8_t options[40];
+    uint8_t options[40] = {};
 
     Ipv4Header();
     Ipv4Header(uint8_t *data, bool ntoh);

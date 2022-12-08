@@ -65,6 +65,9 @@ Ipv4Header::Ipv4Header(uint8_t *data, bool ntoh) {
     source = data[12] << 24 | data[13] << 16 | data[14] << 8 | data[15];
     destination = data[16] << 24 | data[17] << 16 | data[18] << 8 | data[19];
 
+    // TODO: fix options
+    *(this->options) = {};
+
     if (ntoh) {
         payload_len = ntohs(payload_len);
         identification = ntohs(identification);

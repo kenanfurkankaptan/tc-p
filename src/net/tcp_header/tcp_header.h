@@ -22,7 +22,7 @@ class TcpHeader {
     uint16_t checksum;
     uint16_t urgent_pointer;
 
-    uint8_t options[40];
+    uint8_t options[40] = {};
 
     TcpHeader();
     TcpHeader(const uint8_t *data, bool ntoh);

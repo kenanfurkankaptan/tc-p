@@ -12,7 +12,7 @@ CXX = g++
 # -Werror  		- make all warnings into errors.
 # -Wnon-virtual-dtor - warn the user if a class with virtual functions has a non-virtual destructor. This helps catch hard to track down memory errors
 # -fanalyzer  	- control static analysis
-CPPFLAGS = -g -O -Wall -Wextra -Wpedantic -std=c++20
+CPPFLAGS = -g -O -Wall -Wextra -Wpedantic -fsanitize=address,pointer-compare,pointer-subtract -D_GLIBCXX_SANITIZE_VECTOR -std=c++20
 
 # The build target 
 TARGET = tc++p
