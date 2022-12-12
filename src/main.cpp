@@ -7,7 +7,7 @@
 #include "control/controller.h"
 
 int main() {
-    Controller ctrl = Controller();
+    auto ctrl = Controller();
     ctrl.listen_port(9000);
     ctrl.listen_port(9500);
 

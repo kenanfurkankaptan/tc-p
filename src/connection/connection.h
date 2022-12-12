@@ -115,25 +115,26 @@ class Connection {
     */
     Connection() = default;
 
-    void accept(struct device *dev, Net::Ipv4Header &ip_h, Net::TcpHeader &tcp_h);
+    void accept(struct device *dev, const Net::Ipv4Header &ip_h, const Net::TcpHeader &tcp_h);
     void connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port);
-    void close(struct device *dev);
+    void delete_TCB();
+    void close();
 
-    void on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net::TcpHeader &tcp_h, uint8_t *data, int data_len);
+    void on_packet(struct device *dev, const Net::Ipv4Header &ip_h, const Net::TcpHeader &tcp_h, uint8_t *data, int data_len);
     void on_tick(struct device *dev);
     void flush(struct device *dev);
 
     void write(struct device *dev, uint32_t seq, uint32_t limit);
-    void send_rst(struct device *dev, const Net::TcpHeader &tcp_h);
+    void send_rst(struct device *dev, const Net::Ipv4Header &ip_h, const Net::TcpHeader &tcp_h, int slen);
 
-    bool sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t wend);
+    bool sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t wend) const;
 
-    bool is_in_synchronized_state();
-    bool is_rcv_closed();
-    bool is_snd_closed();
+    bool is_in_synchronized_state() const;
+    bool is_rcv_closed() const;
+    bool is_snd_closed() const;
 
     /** TODO: define or delete functions below **/
-    void availability();
+    void availability() const;
 };
 
 #endif /* CONNECTION_H */

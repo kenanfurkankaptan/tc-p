@@ -1,7 +1,7 @@
 #include "connection.h"
 
 // generates connection with incoming packets
-void Connection::accept(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpHeader &tcp_h) {
+void Connection::accept(struct device *dev, const Net::Ipv4Header &ip_h, const Net ::TcpHeader &tcp_h) {
     uint16_t iss = 0;
     uint16_t wnd = 1024;
 
@@ -65,36 +65,49 @@ void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, u
     return;
 }
 
-void Connection::close(struct device *dev) {
-    this->closed = true;
+void Connection::delete_TCB() {
+    this->state = State::Closed;
+    this->send = SendSequenceSpace{};
+    this->recv = RecvSequenceSpace{};
+    this->ip = Net::Ipv4Header();
+    this->tcp = Net::TcpHeader();
+    this->incoming = Queue();
+    this->unacked = Queue();
+    this->closed = false;
+    this->closed_at = 0;
+
+    return;
 }
 
-void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpHeader &tcp_h, uint8_t *data, int data_len) {
+void Connection::close() { this->closed = true; }
+
+void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, const Net ::TcpHeader &tcp_h, uint8_t *data, int data_len) {
     uint32_t seqn = tcp_h.sequence_number;            // sequence number
     uint32_t ackn = tcp_h.acknowledgment_number;      // ack number
     uint32_t wend = this->recv.nxt + this->recv.wnd;  // window end
 
+    // The TCP header, also referred to as "segment header", and the payload, or data, or "segment data" make up the TCP segment, of varying size.
     int slen = data_len;
     if (tcp_h.fin()) {
         slen += 1;
-    };
+    }
     if (tcp_h.syn()) {
         slen += 1;
-    };
+    }
 
     /* STATES */
     if (this->state == State::Closed) {
         if (tcp_h.rst()) {
             return;
         } else {
-            return send_rst(dev, tcp_h);
+            return send_rst(dev, ip_h, tcp_h, slen);
         }
     } else if (this->state == State::Listen) {
         // we only expect syn packet
         if (tcp_h.rst())
             return;
         else if (tcp_h.ack())
-            return send_rst(dev, tcp_h);
+            return send_rst(dev, ip_h, tcp_h, slen);
         else if (tcp_h.syn())
             /** TODO: check security/compartment and SEG.PRC */
 
@@ -107,7 +120,8 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
 
         if (tcp_h.ack()) {
             /** If SEG.ACK =< ISS, or SEG.ACK > SND.NXT, send a reset */
-            if (wrapping_lt(send.iss - 1, tcp_h.acknowledgment_number) || wrapping_lt(tcp_h.acknowledgment_number, send.iss)) return send_rst(dev, tcp_h);
+            if (wrapping_lt(send.iss - 1, tcp_h.acknowledgment_number) || wrapping_lt(tcp_h.acknowledgment_number, send.iss))
+                return send_rst(dev, ip_h, tcp_h, slen);
 
             /** If SND.UNA =< SEG.ACK =< SND.NXT then the ACK is acceptable. */
             is_ack_acceptable = is_between_wrapped(this->send.una - 1, ackn, this->send.nxt + 1);
@@ -123,7 +137,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
         }
         /** TODO: check security/compartment and SEG.PRC */
 
-        if ((is_ack_acceptable != true) || (is_ack_acceptable != NULL)) return;
+        if (is_ack_acceptable == false) return;
         /** This step should be reached only if the ACK is ok, or there is
         no ACK, and it the segment did not contain a RST.
         */
@@ -199,18 +213,16 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
 
             } else if ((state == State::Estab) || (state == State::FinWait1) || (state == State::FinWait2) || (state == State::CloseWait)) {
                 /** TODO: flush all queue */
-                /** TODO: delete tcb */
-                this->state = State::Closed;
+                delete_TCB();
             } else if ((state == State::Closing) || (state == State::LastAck) || (state == State::TimeWait)) {
-                /** TODO: delete tcb */
-                this->state = State::Closed;
+                delete_TCB();
             }
         }
 
         /** TODO: check security/compartment and SEG.PRC */
 
         if (tcp_h.syn()) {
-            this->send_rst(dev, tcp_h);
+            this->send_rst(dev, ip_h, tcp_h, slen);
 
             /** TODO: flush */
             return;
@@ -225,10 +237,11 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                     // and we have only one byte (the SYN)
                     this->state = State::Estab;
                 } else {
-                    send_rst(dev, tcp_h);
+                    send_rst(dev, ip_h, tcp_h, slen);
                 }
             }
-            if ((state == State::Estab) || (state == State::FinWait1) || (state == State::FinWait2) || (state == State::CloseWait) || (state == State::Closing)) {
+            if ((state == State::Estab) || (state == State::FinWait1) || (state == State::FinWait2) || (state == State::CloseWait) ||
+                (state == State::Closing)) {
                 if (is_between_wrapped(this->send.una, ackn, this->send.nxt + 1)) {
                     if (!this->unacked.data.empty()) {
                         int32_t data_start = [&]() {
@@ -250,7 +263,8 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                                 auto seq = itr->first;
                                 auto sent = itr->second;
                                 if (is_between_wrapped(this->send.una, seq, ackn)) {
-                                    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - sent).count();
+                                    auto elapsed =
+                                        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - sent).count();
                                     /** SRTT = ( ALPHA * SRTT ) + ((1-ALPHA) * RTT)
                                      * Alpha is taken 0.8 */
                                     this->timers.srtt = ((int64_t)0.8 * this->timers.srtt + (int64_t)(1.0 - 0.8) * elapsed);
@@ -303,9 +317,7 @@ void Connection::on_packet(struct device *dev, Net::Ipv4Header &ip_h, Net ::TcpH
                 if (this->send.una == closed_at + 1) {
                     // our FIN has been ACKed!
                     std::cout << "Our FIN has been ACKed" << std::endl;
-
-                    // TODO: delete TCB
-                    this->state = State::Closed;
+                    delete_TCB();
                 }
             }
             if (this->state == State::TimeWait) {
@@ -398,8 +410,7 @@ void Connection::on_tick(struct device *dev) {
     bool should_retransmit = ([&]() {
         // 1 * (1000000) = 1 second
         // 60 * (1000000) = 60 second
-        return ((waited_for > (1 * (1000000))) && (waited_for > (((int64_t)1.5) * this->timers.srtt))) ||
-               (waited_for > (60 * (1000000)));
+        return ((waited_for > (1 * (1000000))) && (waited_for > (((int64_t)1.5) * this->timers.srtt))) || (waited_for > (60 * (1000000)));
     }());
 
     // std::cout << "srtt: " << this->timers.srtt << std::endl;
@@ -571,16 +582,19 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     return;
 }
 
-void Connection::send_rst(struct device *dev, const Net::TcpHeader &tcp_h) {
+void Connection::send_rst(struct device *dev, const Net::Ipv4Header &ip_h, const Net::TcpHeader &tcp_h, int slen) {
     std::cout << "Sending Reset" << std::endl;
 
     this->tcp.rst(true);
     this->tcp.ack(false);
 
-    // TODO: fix seq len
-    int seg_len = 0;
+    if (this->state == State::Closed || !is_in_synchronized_state()) {
+        this->ip.destination = ip_h.source;
+        this->ip.source = ip_h.destination;
+        this->tcp.destination_port = tcp_h.source_port;
+        this->tcp.source_port = tcp_h.destination_port;
+        this->tcp.window_size = 1024;
 
-    if (this->state == State::Closed) {
         // write <SEQ=SEG.ACK><CTL=RST>
         if (tcp_h.ack()) {
             this->tcp.sequence_number = tcp_h.acknowledgment_number;
@@ -588,34 +602,25 @@ void Connection::send_rst(struct device *dev, const Net::TcpHeader &tcp_h) {
         // write <SEQ=0><ACK=SEG.SEQ+SEG.LEN><CTL=RST,ACK>
         else {
             this->tcp.sequence_number = 0;
-            this->tcp.acknowledgment_number = tcp_h.sequence_number + seg_len;
+            this->tcp.acknowledgment_number = tcp_h.sequence_number + slen;
             this->tcp.ack(true);
         }
-    } else if (!is_in_synchronized_state()) {
-        // write <SEQ=SEG.ACK><CTL=RST>
-        if (tcp_h.ack()) {
-            this->tcp.sequence_number = tcp_h.acknowledgment_number;
-        }
-        // write <SEQ=0><ACK=SEG.SEQ+SEG.LEN><CTL=RST,ACK>
-        else {
-            this->tcp.sequence_number = 0;
-            this->tcp.acknowledgment_number = tcp_h.sequence_number + seg_len;
-            this->tcp.ack(true);
-        }
+        this->write(dev, this->tcp.sequence_number, 0);
 
+        delete_TCB();
+
+        return;
     } else {
         this->tcp.acknowledgment_number = this->send.nxt;
+        this->write(dev, this->tcp.sequence_number, 0);
         this->tcp.ack(true);
+        return;
     }
 
-    this->write(dev, this->send.nxt, 0);
-    this->tcp.ack(true);
     return;
 }
 
-bool Connection::is_in_synchronized_state() {
-    return !((state == State::Listen) || (state == State::SynRcvd) || (state == State::SynSent));
-}
+bool Connection::is_in_synchronized_state() const { return !((state == State::Listen) || (state == State::SynRcvd) || (state == State::SynSent)); }
 
 // first check that sequence numbers are valid (RFC 793 S3.3)
 //
@@ -623,7 +628,7 @@ bool Connection::is_in_synchronized_state() {
 // RCV.NXT =< SEG.SEQ < RCV.NXT + RCV.WND
 // RCV.NXT =< SEG.SEQ + SEG.LEN-1 < RCV.NXT + RCV.WND
 //
-bool Connection::sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t wend) {
+bool Connection::sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t wend) const {
     if (slen == 0) {
         // zero-length segment has seperate rules for acceptance
         if (this->recv.wnd == 0) {
@@ -651,14 +656,16 @@ bool Connection::sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t we
 //-------------------------------------------------------
 
 /** TODO: implement if needed */
-void Connection::availability() {
-    return;
+void Connection::availability() const { return; }
+
+bool Connection::is_rcv_closed() const {
+    return (state == State::TimeWait) || (state == State::CloseWait) || (state == State::LastAck) || (state == State::Closed) || (state == State::Closing)
+               ? true
+               : false;
 }
 
-bool Connection::is_rcv_closed() {
-    return (state == State::TimeWait) || (state == State::CloseWait) || (state == State::LastAck) || (state == State::Closed) || (state == State::Closing) ? true : false;
-}
-
-bool Connection::is_snd_closed() {
-    return (state == State::FinWait1) || (state == State::FinWait2) || (state == State::Closing) || (state == State::LastAck) || (state == State::Closed) ? true : false;
+bool Connection::is_snd_closed() const {
+    return (state == State::FinWait1) || (state == State::FinWait2) || (state == State::Closing) || (state == State::LastAck) || (state == State::Closed)
+               ? true
+               : false;
 }

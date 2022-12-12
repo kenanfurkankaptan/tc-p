@@ -7,12 +7,8 @@
 #include <iostream>
 #include <thread>
 
-ConnectionInfo::ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
-    this->src_ip = src_ip;
-    this->dst_ip = dst_ip;
-    this->src_port = src_port;
-    this->dst_port = dst_port;
-
+ConnectionInfo::ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port)
+    : src_ip{src_ip}, dst_ip{dst_ip}, src_port{src_port}, dst_port{dst_port} {
     this->connection = nullptr;
 }
 
@@ -56,7 +52,7 @@ void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t 
     for (auto c : connection_list) {
         if (dst_ip == c.dst_ip && src_ip == c.src_ip && dst_port == c.dst_port && src_port == c.src_port) {
             c.connection->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), (int)data.length());
-            c.connection->close(dev);
+            c.connection->close();
         }
     }
 }
@@ -92,7 +88,7 @@ void Controller::packet_loop() {
 
         membuf ip_buf(buff, buff + sizeof(buff));
         std::istream ip_packet(&ip_buf);
-        Net::Ipv4Header ip = Net::Ipv4Header(ip_packet, true);
+        auto ip = Net::Ipv4Header(ip_packet, true);
 
         if (ip.ip_version() != 4) {
             std::cout << "not ipv4 packet: " << std::bitset<8>(ip.ip_version()) << std::endl;
@@ -108,12 +104,12 @@ void Controller::packet_loop() {
         std::istream tcp_packet(&tcp_buf);
 
         /** TODO: consider memmove */
-        Net::TcpHeader tcp = Net::TcpHeader(tcp_packet, true);
+        auto tcp = Net::TcpHeader(tcp_packet, true);
 
         uint8_t *data = (uint8_t *)buff + ip.get_size() + tcp.get_header_len();
         int data_len = ip.payload_len - (ip.get_size() + tcp.get_header_len());
 
-        ConnectionInfo temp_connection = ConnectionInfo(ip.source, ip.destination, tcp.source_port, tcp.destination_port);
+        auto temp_connection = ConnectionInfo(ip.source, ip.destination, tcp.source_port, tcp.destination_port);
 
         auto temp_idx = std::find(connection_list.begin(), connection_list.end(), temp_connection);
         if (temp_idx != connection_list.end()) {

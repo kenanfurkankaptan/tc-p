@@ -8,9 +8,7 @@
 
 namespace Net {
 
-TcpHeader::TcpHeader() {
-    this->ntoh = true;
-
+TcpHeader::TcpHeader() : ntoh{true} {
     this->source_port = 0;
     this->destination_port = 0;
     this->sequence_number = 0;
@@ -21,9 +19,7 @@ TcpHeader::TcpHeader() {
     this->urgent_pointer = 0;
 };
 
-TcpHeader::TcpHeader(std::istream &stream, bool ntoh) {
-    this->ntoh = ntoh;
-
+TcpHeader::TcpHeader(std::istream &stream, bool ntoh) : ntoh{ntoh} {
     stream.read((char *)&source_port, sizeof(source_port));
     stream.read((char *)&destination_port, sizeof(destination_port));
     stream.read((char *)&sequence_number, sizeof(sequence_number));
@@ -48,9 +44,7 @@ TcpHeader::TcpHeader(std::istream &stream, bool ntoh) {
     }
 }
 
-TcpHeader::TcpHeader(const uint8_t *data, bool ntoh) {
-    this->ntoh = ntoh;
-
+TcpHeader::TcpHeader(const uint8_t *data, bool ntoh) : ntoh{ntoh} {
     source_port = data[1] << 8 | (data[2] & 0xFF);
     destination_port = data[3] << 8 | (data[4] & 0xFF);
     sequence_number = data[5] << 24 | data[6] << 16 | data[7] << 8 | data[8];
@@ -141,7 +135,7 @@ uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, i
     sum += urgent_pointer;
 
     // add options
-    uint16_t *addr_options = (uint16_t *)options;
+    const uint16_t *addr_options = (uint16_t *)options;
     int option_count = this->get_header_len() - 20;
     while (option_count > 1) {
         sum += ntohs(*addr_options++);
@@ -153,7 +147,7 @@ uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, i
     }
 
     // add data
-    uint16_t *addr_data = (uint16_t *)data;
+    const uint16_t *addr_data = (uint16_t *)data;
     int data_count = data_len;
     while (data_count > 1) {
         sum += ntohs(*addr_data);
@@ -162,7 +156,7 @@ uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, i
     }
     // if any bytes left, pad the bytes and add
     if (data_count > 0) {
-        sum += (ntohs(*addr_data) & (0xFF00));
+        sum += (ntohs(*addr_data) & 0xFF00);
     }
 
     // Fold sum to 16 bits: add carrier to result
@@ -173,9 +167,7 @@ uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, i
     return ((uint16_t)sum ^ 0xFFFF);
 };
 
-uint16_t TcpHeader::get_header_len() const {
-    return ((data_offset_and_flags & 0xF000) >> 12) * sizeof(uint32_t);
-}
+uint16_t TcpHeader::get_header_len() const { return ((data_offset_and_flags & 0xF000) >> 12) * sizeof(uint32_t); }
 
 void TcpHeader::set_header_len(uint16_t len) {
     if (len > 60) {
@@ -183,7 +175,7 @@ void TcpHeader::set_header_len(uint16_t len) {
         this->data_offset_and_flags = 0xF000;
         return;
     }
-    this->data_offset_and_flags ^= (((len / sizeof(uint32_t)) << 12) ^ this->data_offset_and_flags) & (0xF000);
+    this->data_offset_and_flags ^= (((len / sizeof(uint32_t)) << 12) ^ this->data_offset_and_flags) & 0xF000;
 }
 
 /* get flags */
@@ -193,61 +185,25 @@ void TcpHeader::set_header_len(uint16_t len) {
     However, reading of a class variables is okay inside of the function,
     but writing inside of this function will generate a compiler error.
 */
-bool TcpHeader::nonce() const {
-    return (data_offset_and_flags >> 8) & 1U;
-}
-bool TcpHeader::cwr() const {
-    return (data_offset_and_flags >> 7) & 1U;
-}
-bool TcpHeader::ech_echo() const {
-    return (data_offset_and_flags >> 6) & 1U;
-}
-bool TcpHeader::urg() const {
-    return (data_offset_and_flags >> 5) & 1U;
-}
-bool TcpHeader::ack() const {
-    return (data_offset_and_flags >> 4) & 1U;
-}
-bool TcpHeader::psh() const {
-    return (data_offset_and_flags >> 3) & 1U;
-}
-bool TcpHeader::rst() const {
-    return (data_offset_and_flags >> 2) & 1U;
-}
-bool TcpHeader::syn() const {
-    return (data_offset_and_flags >> 1) & 1U;
-}
-bool TcpHeader::fin() const {
-    return (data_offset_and_flags >> 0) & 1U;
-}
+bool TcpHeader::nonce() const { return (data_offset_and_flags >> 8) & 1U; }
+bool TcpHeader::cwr() const { return (data_offset_and_flags >> 7) & 1U; }
+bool TcpHeader::ech_echo() const { return (data_offset_and_flags >> 6) & 1U; }
+bool TcpHeader::urg() const { return (data_offset_and_flags >> 5) & 1U; }
+bool TcpHeader::ack() const { return (data_offset_and_flags >> 4) & 1U; }
+bool TcpHeader::psh() const { return (data_offset_and_flags >> 3) & 1U; }
+bool TcpHeader::rst() const { return (data_offset_and_flags >> 2) & 1U; }
+bool TcpHeader::syn() const { return (data_offset_and_flags >> 1) & 1U; }
+bool TcpHeader::fin() const { return (data_offset_and_flags >> 0) & 1U; }
 
 /* set flags */
-void TcpHeader::nonce(bool flag) {
-    this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 8);
-}
-void TcpHeader::cwr(bool flag) {
-    this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 7);
-}
-void TcpHeader::ech_echo(bool flag) {
-    this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 6);
-}
-void TcpHeader::urg(bool flag) {
-    this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 5);
-}
-void TcpHeader::ack(bool flag) {
-    this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 4);
-}
-void TcpHeader::psh(bool flag) {
-    this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 3);
-}
-void TcpHeader::rst(bool flag) {
-    this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 2);
-}
-void TcpHeader::syn(bool flag) {
-    this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 1);
-}
-void TcpHeader::fin(bool flag) {
-    this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 0);
-}
+void TcpHeader::nonce(bool flag) { this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 8); }
+void TcpHeader::cwr(bool flag) { this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 7); }
+void TcpHeader::ech_echo(bool flag) { this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 6); }
+void TcpHeader::urg(bool flag) { this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 5); }
+void TcpHeader::ack(bool flag) { this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 4); }
+void TcpHeader::psh(bool flag) { this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 3); }
+void TcpHeader::rst(bool flag) { this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 2); }
+void TcpHeader::syn(bool flag) { this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 1); }
+void TcpHeader::fin(bool flag) { this->data_offset_and_flags ^= (-flag ^ this->data_offset_and_flags) & (1UL << 0); }
 
 }  // namespace Net
