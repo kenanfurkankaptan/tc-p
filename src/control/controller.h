@@ -3,29 +3,18 @@
 
 #include <iostream>
 #include <map>
+#include <memory>
 #include <vector>
 
 #include "../connection/connection.h"
-
-class ConnectionInfo {
-   public:
-    uint32_t src_ip;
-    uint32_t dst_ip;
-    uint16_t src_port;
-    uint16_t dst_port;
-    Connection *connection;
-
-    ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port);
-
-    bool operator==(const ConnectionInfo &c) const {
-        return this->dst_ip == c.dst_ip && this->src_ip == c.src_ip && this->dst_port == c.dst_port && this->src_port == c.src_port;
-    }
-};
+#include "../connection_info/connection_info.h"
 
 class Controller {
    public:
     struct device *dev;
-    std::vector<ConnectionInfo> connection_list;
+
+    // TODO: std::shared_ptr could be useful here
+    std::vector<ConnectionInfo *> connection_list;
     std::vector<uint16_t> listened_ports;
 
     Controller();
@@ -34,7 +23,7 @@ class Controller {
     void packet_loop();
     void listen_port(uint16_t port);
     void write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data);
-    void add_connection(ConnectionInfo connection_info);
+    void add_connection(ConnectionInfo *connection_info);
 };
 
 #endif /* CONTROLLER_H */

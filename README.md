@@ -1,6 +1,6 @@
 # tc-p
 
-Simple TCP implementation with C++. It is still in development.
+Simple TCP implementation with C++. It is still in development phase.
 
 Useful links:
 1) https://www.rfc-editor.org/rfc/rfc793: This document describes the DoD Standard Transmission Control Protocol (TCP).

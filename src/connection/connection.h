@@ -105,8 +105,12 @@ class Connection {
     Timer timers;
     Queue incoming;
     Queue unacked;  // unacked contains both sent and unsent data
-    bool closed;
-    uint32_t closed_at = 0;  // == 0 means it is not set
+
+    bool send_closed;
+    uint32_t send_closed_at = 0;  // == 0 means it is not set
+
+    bool connection_is_closed;
+    std::chrono::_V2::system_clock::time_point connection_close_start_time;
 
     /*
     A copy or move assignment operator cannot be automatically generated
@@ -118,7 +122,9 @@ class Connection {
     void accept(struct device *dev, const Net::Ipv4Header &ip_h, const Net::TcpHeader &tcp_h);
     void connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port);
     void delete_TCB();
-    void close();
+    void close_send();
+    void start_close_timer();
+    void check_close_timer();
 
     void on_packet(struct device *dev, const Net::Ipv4Header &ip_h, const Net::TcpHeader &tcp_h, uint8_t *data, int data_len);
     void on_tick(struct device *dev);

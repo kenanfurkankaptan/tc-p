@@ -7,11 +7,6 @@
 #include <iostream>
 #include <thread>
 
-ConnectionInfo::ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port)
-    : src_ip{src_ip}, dst_ip{dst_ip}, src_port{src_port}, dst_port{dst_port} {
-    this->connection = nullptr;
-}
-
 Controller::Controller() {
     struct device *dev;
 
@@ -50,21 +45,23 @@ void Controller::listen_port(uint16_t port) {
 
 void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) {
     for (auto c : connection_list) {
-        if (dst_ip == c.dst_ip && src_ip == c.src_ip && dst_port == c.dst_port && src_port == c.src_port) {
-            c.connection->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), (int)data.length());
-            c.connection->close();
+        if (*c == ConnectionInfo(src_ip, dst_ip, src_port, dst_port)) {
+            c->connection->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), (int)data.length());
+
+            // TODO: it added for tests, remove it later
+            c->connection->close_send();
+            return;
         }
     }
+    std::cout << "connection not found!!" << std::endl;
 }
 
-void Controller::add_connection(ConnectionInfo connection_info) {
-    auto temp_ptr = new Connection();
-    connection_info.connection = temp_ptr;
+void Controller::add_connection(ConnectionInfo *connection_info) {
+    connection_info->create_new_connection();
     this->connection_list.push_back(connection_info);
 
-    temp_ptr->connect(dev, connection_info.src_ip, connection_info.dst_ip, connection_info.src_port, connection_info.dst_port);
-
-    std::cout << "start connection on port: " << connection_info.dst_port << std::endl;
+    connection_info->connection->connect(dev, connection_info->src_ip, connection_info->dst_ip, connection_info->src_port, connection_info->dst_port);
+    std::cout << "start connection on port: " << connection_info->dst_port << std::endl;
 }
 
 void Controller::packet_loop() {
@@ -74,10 +71,19 @@ void Controller::packet_loop() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-            for (auto c : connection_list) {
-                std::lock_guard<std::mutex> guard(c.connection->lockMutex);
+            for (int idx = 0; auto c : connection_list) {
+                if (c->connection == nullptr) return;
+                std::lock_guard<std::mutex> guard(c->connection->lockMutex);
+                c->connection->on_tick(dev);
+                c->connection->check_close_timer();
 
-                c.connection->on_tick(dev);
+                // remove connection if it is in closed state
+                if (c->check_if_connection_closed()) {
+                    delete c;
+                    connection_list.erase(connection_list.begin() + idx);
+                    std::cout << "connection removed from the list " << std::endl;
+                }
+                ++idx;
             }
         }
     });
@@ -91,12 +97,12 @@ void Controller::packet_loop() {
         auto ip = Net::Ipv4Header(ip_packet, true);
 
         if (ip.ip_version() != 4) {
-            std::cout << "not ipv4 packet: " << std::bitset<8>(ip.ip_version()) << std::endl;
+            std::cout << "packet dropped: not ipv4 packet " << std::endl;
             continue;
         }
 
         if (ip.protocol != 6) {
-            std::cout << "not tcp packet" << std::endl;
+            std::cout << "packet dropped: not tcp segment" << std::endl;
             continue;
         }
 
@@ -109,13 +115,15 @@ void Controller::packet_loop() {
         uint8_t *data = (uint8_t *)buff + ip.get_size() + tcp.get_header_len();
         int data_len = ip.payload_len - (ip.get_size() + tcp.get_header_len());
 
-        auto temp_connection = ConnectionInfo(ip.source, ip.destination, tcp.source_port, tcp.destination_port);
-
-        auto temp_idx = std::find(connection_list.begin(), connection_list.end(), temp_connection);
-        if (temp_idx != connection_list.end()) {
+        auto temp_connection = new ConnectionInfo(ip.source, ip.destination, tcp.source_port, tcp.destination_port);
+        auto index_iterator =
+            std::ranges::find_if(connection_list.begin(), connection_list.end(), [&](ConnectionInfo const *c) { return *c == *temp_connection; });
+        if (index_iterator != connection_list.end()) {
             // connection is exist
-            connection_list.at(temp_idx - connection_list.begin()).connection->on_packet(dev, ip, tcp, data, data_len);
+            long int index = index_iterator - connection_list.begin();
+            connection_list.at(index)->connection->on_packet(dev, ip, tcp, data, data_len);
 
+            // TODO: handle write in different place
             if (data_len && strncmp((const char *)data, "hello\n", data_len) == 0) {
                 std::string temp55 = "Data received";
                 this->write_to_connection(ip.source, ip.destination, tcp.source_port, tcp.destination_port, temp55);
@@ -123,16 +131,15 @@ void Controller::packet_loop() {
 
         } else {
             // connection is not exist
-            if (std::find(listened_ports.begin(), listened_ports.end(), temp_connection.dst_port) != listened_ports.end()) {
+            if (std::ranges::find(listened_ports.begin(), listened_ports.end(), temp_connection->dst_port) != listened_ports.end()) {
                 // port is accepted
-                auto temp_ptr = new Connection();
-                temp_connection.connection = temp_ptr;
-                temp_ptr->on_packet(dev, ip, tcp, data, data_len);
                 connection_list.push_back(temp_connection);
-                std::cout << "packet on port: " << temp_connection.dst_port << std::endl;
+                connection_list.back()->create_new_connection()->on_packet(dev, ip, tcp, data, data_len);
+
+                std::cout << "new packet on port: " << temp_connection->dst_port << std::endl;
             } else {
                 // port is not accepted
-                std::cout << "port: " << temp_connection.dst_port << " is not accepted" << std::endl;
+                std::cout << "port: " << temp_connection->dst_port << " is not accepted" << std::endl;
             }
         }
     }

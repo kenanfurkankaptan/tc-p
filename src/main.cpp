@@ -1,3 +1,12 @@
+/**
+ * main.cpp
+ *
+ * tc-p is a simple C++ TCP protocol implementation, to serve as an example to anyone who wants to learn it.
+ *
+ * Use with neccesary caution, this code has not been audited or tested for performance problems, security holes, memory leaks etc.
+ *
+ */
+
 #include <netinet/in.h>
 
 #include <bitset>

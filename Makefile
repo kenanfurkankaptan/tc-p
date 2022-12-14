@@ -12,7 +12,7 @@ CXX = g++
 # -Werror  		- make all warnings into errors.
 # -Wnon-virtual-dtor - warn the user if a class with virtual functions has a non-virtual destructor. This helps catch hard to track down memory errors
 # -fanalyzer  	- control static analysis
-CPPFLAGS = -g -O -Wall -Wextra -Wpedantic -fsanitize=address,pointer-compare,pointer-subtract -D_GLIBCXX_SANITIZE_VECTOR -std=c++20
+CPPFLAGS = -g -O -Wall -Wextra -Wconversion -Wpedantic -fsanitize=address,pointer-compare,pointer-subtract -D_GLIBCXX_SANITIZE_VECTOR -std=c++20
 
 # The build target 
 TARGET = tc++p
@@ -25,7 +25,7 @@ LDFLAGS += -ltuntap++ -ltuntap
 
 # Src files list
 SRCDIR := src
-SRCSUBDIRS := . net/ip_header net/tcp_header control connection util util/queue
+SRCSUBDIRS := . net/ip_header net/tcp_header control connection connection_info util util/queue
 
 # A directory to store object files
 BUILDDIR = .build
@@ -52,3 +52,7 @@ clean:
 	@echo rm -rf $(OBJECTS)
 	@echo rm -rf $(TARGET)
 	@echo rm -rf $(BUILDDIR)/*
+
+debug:
+	@echo $(SOURCES)
+	@echo $(OBJECTS)
