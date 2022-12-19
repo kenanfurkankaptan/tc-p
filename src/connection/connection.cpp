@@ -363,10 +363,11 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                     unread_data_at = 0;
                 }
 
+                /** TODO: refactor if needed **/
                 incoming.enqueue(data, data_len);
 
                 std::cout << "incoming data" << std::endl;
-                unsigned char *ptr = data;
+                const unsigned char *ptr = data;
                 for (int i = 0; i < data_len; i++) {
                     std::cout << ptr[i];
                 }
@@ -411,9 +412,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
     return;
 }
 
-/**
- * TODO: fix on_tick for sending syn-fin flags
- */
+/** TODO: fix on_tick for sending syn-fin flags **/
 void Connection::on_tick(struct device *dev) {
     if ((state == State::Closed) || (state == State::TimeWait) || (state == State::FinWait2)) {
         // we have shutdown our write side and the other side acked, no need to (re)transmit anything
@@ -423,8 +422,8 @@ void Connection::on_tick(struct device *dev) {
     uint32_t nunacked_data = (send_closed_at != 0 ? send_closed_at : this->send.nxt) - this->send.una;
     uint32_t nunsent_data = (uint32_t)this->unacked.data.size() - nunacked_data;
 
-    auto temp66 = *(std::next(this->timers.send_times.begin(), this->send.una - this->send.iss));
-    int64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - temp66.second).count();
+    auto [first_unacked_key, first_unacked_value] = *(std::next(this->timers.send_times.begin(), this->send.una - this->send.iss));
+    int64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - first_unacked_value).count();
 
     /** RTO = min[UPPERBOUND,max[LOWERBOUND,(BETA*SRTT)]]
      * Beta is taken as 1.5

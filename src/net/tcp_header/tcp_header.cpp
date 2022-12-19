@@ -8,16 +8,7 @@
 
 namespace Net {
 
-TcpHeader::TcpHeader() : ntoh{true} {
-    this->source_port = 0;
-    this->destination_port = 0;
-    this->sequence_number = 0;
-    this->acknowledgment_number = 0;
-    this->data_offset_and_flags = 0;
-    this->window_size = 0;
-    this->checksum = 0;
-    this->urgent_pointer = 0;
-};
+TcpHeader::TcpHeader() : ntoh{true} {};
 
 TcpHeader::TcpHeader(std::istream &stream, bool ntoh) : ntoh{ntoh} {
     stream.read((char *)&source_port, sizeof(source_port));
@@ -175,7 +166,7 @@ void TcpHeader::set_header_len(uint16_t len) {
         this->data_offset_and_flags = 0xF000;
         return;
     }
-    this->data_offset_and_flags ^= (((len / sizeof(uint32_t)) << 12) ^ this->data_offset_and_flags) & 0xF000;
+    this->data_offset_and_flags ^= (((len / sizeof(uint32_t)) << 12) ^ this->data_offset_and_flags) & 0xF000U;
 }
 
 /* get flags */

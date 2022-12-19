@@ -9,10 +9,9 @@
 namespace Net {
 
 class TcpHeader {
-   private:
+   public:
     bool ntoh;
 
-   public:
     uint16_t source_port;
     uint16_t destination_port;
     uint32_t sequence_number;
