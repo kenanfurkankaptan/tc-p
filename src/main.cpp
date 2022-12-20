@@ -16,6 +16,15 @@
 #include "control/controller.h"
 
 int main() {
+    std::map<int, int> temp_map = {{1, 1}, {2, 2}, {3, 3}};
+
+    auto temp_ptr = std::next(temp_map.begin(), 1);
+
+    std::cout << (*std::next(temp_map.begin(), 1)).first << std::endl;
+    std::cout << (*std::next(temp_map.begin(), 2)).first << std::endl;
+    std::cout << (*std::next(temp_map.begin(), 3)).first << std::endl;
+    std::cout << (*std::next(temp_map.begin(), 4)).first << std::endl;
+
     auto ctrl = Controller();
     ctrl.listen_port(9000);
     ctrl.listen_port(9500);

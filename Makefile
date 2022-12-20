@@ -1,13 +1,11 @@
 # the compiler: gcc for C program, define as g++ for C++
 CXX = g++
 
-# compiler flags:
-
+# COMPILER FLAGS:
 
 # -g	- this flag adds debugging information to the executable file
 # -O	- the compiler tries to reduce code size and execution time, it may create distruptions in debuggig, remove it in debugging
 CPPFLAGS = -g -O3 -std=c++20
-
 
 # -Wall  					- this flag is used to turn on most compiler warnings
 # -Wextra  					- this flag enables some extra warning flags that are not enabled by -Wall.
@@ -30,8 +28,6 @@ COMPILER_WARNINGS = -Wall -Wextra -Wconversion -Wpedantic -Wnon-virtual-dtor -Wd
 # -D_GLIBCXX_SANITIZE_VECTOR		- detect container overflow
 ADDRESS = -fsanitize=address,pointer-compare,pointer-subtract -D_GLIBCXX_SANITIZE_VECTOR
 
-# pointer-compare,pointer-subtract 
-
 # -fsanitize=undefined					- undefined behavior detector. Various computations are instrumented to detect undefined behavior at runtime.
 # -fsanitize=float-divide-by-zero		- detect floating-point division by zero
 # -fsanitize=float-cast-overflow		- floating-point type to integer conversion checking
@@ -41,6 +37,7 @@ UNDEFINED = -fsanitize=undefined,float-divide-by-zero,float-cast-overflow,signed
 # -fsanitize=thread		- data race detector, memory access instructions are instrumented to detect data race bugs.
 THREAD= -fsanitize=thread
 
+# -fsanitize=leak 	-run-time memory leak detector
 # If you just need leak detection, and don't want to bear the ASan slowdown, you can build with -fsanitize=leak instead of -fsanitize=address.
 LEAK = -fsanitize=leak
 

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iomanip>
 #include <iostream>
 #include <thread>
 
@@ -49,7 +50,7 @@ void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t 
             c->connection->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), (int)data.length());
 
             // TODO: it added for tests, remove it later
-            c->connection->close_send();
+            if (data == "exit") c->connection->close_send();
             return;
         }
     }
@@ -90,6 +91,8 @@ void Controller::packet_loop() {
 
     while (true) {
         char buff[1500];
+        memset(buff, 0, 1500);
+
         tuntap_read(dev, buff, 1500);
 
         membuf ip_buf(buff, buff + sizeof(buff));
@@ -115,31 +118,38 @@ void Controller::packet_loop() {
         uint8_t *data = (uint8_t *)buff + ip.get_size() + tcp.get_header_len();
         int data_len = ip.payload_len - (ip.get_size() + tcp.get_header_len());
 
-        auto temp_connection = new ConnectionInfo(ip.source, ip.destination, tcp.source_port, tcp.destination_port);
-        auto index_iterator =
-            std::ranges::find_if(connection_list.begin(), connection_list.end(), [&](ConnectionInfo const *c) { return *c == *temp_connection; });
+        // check if same connection established before
+        auto index_iterator = std::ranges::find_if(connection_list.begin(), connection_list.end(), [&](ConnectionInfo const *c) {
+            return c->src_ip == ip.source && c->dst_ip == ip.destination && c->src_port == tcp.source_port && c->dst_port == tcp.destination_port;
+        });
         if (index_iterator != connection_list.end()) {
             // connection is exist
             long int index = index_iterator - connection_list.begin();
-            connection_list.at(index)->connection->on_packet(dev, ip, tcp, data, data_len);
+            auto index_connection = connection_list.at(index);
+            index_connection->connection->on_packet(dev, ip, tcp, data, data_len);
 
-            // TODO: handle write in different place
-            if (data_len && strncmp((const char *)data, "hello\n", data_len) == 0) {
-                std::string temp55 = "Data received";
-                this->write_to_connection(ip.source, ip.destination, tcp.source_port, tcp.destination_port, temp55);
+            if (data_len > 0) {
+                auto data_str = std::string((char *)data);
+
+                // if data ends with newline, remove it
+                // in response table newlines are not included
+                if (data_str.back() == '\n') data_str.pop_back();
+                if (index_connection->response_table.contains(data_str))
+                    this->write_to_connection(ip.source, ip.destination, tcp.source_port, tcp.destination_port, index_connection->response_table[data_str]);
             }
 
         } else {
             // connection is not exist
-            if (std::ranges::find(listened_ports.begin(), listened_ports.end(), temp_connection->dst_port) != listened_ports.end()) {
-                // port is accepted
+            if (std::ranges::find(listened_ports.begin(), listened_ports.end(), tcp.destination_port) != listened_ports.end()) {
+                // port is accepted, create new connection
+                auto temp_connection = new ConnectionInfo(ip.source, ip.destination, tcp.source_port, tcp.destination_port);
                 connection_list.push_back(temp_connection);
                 connection_list.back()->create_new_connection()->on_packet(dev, ip, tcp, data, data_len);
 
                 std::cout << "new packet on port: " << temp_connection->dst_port << std::endl;
             } else {
                 // port is not accepted
-                std::cout << "port: " << temp_connection->dst_port << " is not accepted" << std::endl;
+                std::cout << "port: " << tcp.destination_port << " is not accepted" << std::endl;
             }
         }
     }

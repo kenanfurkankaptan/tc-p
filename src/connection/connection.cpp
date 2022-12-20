@@ -6,6 +6,8 @@ void Connection::accept(struct device *dev, const Net::Ipv4Header &ip_h, const N
     uint16_t wnd = 1024;
 
     this->state = State::SynRcvd;
+    this->previous_state = State::Listen;
+
     this->send = SendSequenceSpace{iss, iss, wnd, false, 0, 0, iss};
     this->recv = RecvSequenceSpace{tcp_h.sequence_number + 1, tcp_h.window_size, false, tcp_h.sequence_number};
     this->ip = ([&]() {
@@ -41,8 +43,9 @@ void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, u
     uint16_t wnd = 1024;
 
     this->state = State::SynSent;
-    this->recv = RecvSequenceSpace();
+    this->previous_state = State::Listen;
 
+    this->recv = RecvSequenceSpace();
     this->send = SendSequenceSpace{iss, iss, wnd, false, 0, 0, iss};
     this->ip = Net::Ipv4Header();
     ip.source = src_ip;
@@ -69,6 +72,8 @@ void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, u
 
 void Connection::delete_TCB() {
     this->state = State::Closed;
+    this->previous_state = State::Closed;
+
     this->send = SendSequenceSpace{};
     this->recv = RecvSequenceSpace{};
     this->ip = Net::Ipv4Header();
@@ -175,7 +180,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
             if (this->send.una > this->send.iss) {
                 return this->write(dev, this->send.nxt, 0);
             } else {
-                this->state = State::SynRcvd;
+                this->change_state(State::SynRcvd);
                 this->tcp.syn(true);
                 return this->write(dev, this->send.iss, 0);
             }
@@ -212,15 +217,13 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
 
         if (tcp_h.rst()) {
             if (this->state == State::SynRcvd) {
-                // TODO: fix passive open
-                bool passive_open = true;
                 /*
                 If this connection was initiated with a passive OPEN (i.e.,
                 came from the LISTEN state), then return this connection to
                 LISTEN state and return.
                 */
-                if (passive_open) {
-                    this->state = State::Listen;
+                if (this->previous_state == State::Listen) {
+                    this->change_state(State::Listen);
                     return;
                 }
                 /*
@@ -228,11 +231,17 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                 from SYN-SENT state) then the connection was refused, enter CLOSED
                 state and return.
                 */
-                else {
+                else if (this->previous_state == State::SynSent) {
                     delete_TCB();
                     return;
                 }
-
+                /*
+                SynRcvd state only reachable from Listen or SynSent states
+                other states are considered to be an error
+                */
+                else {
+                    return;
+                }
             } else if ((state == State::Estab) || (state == State::FinWait1) || (state == State::FinWait2) || (state == State::CloseWait)) {
                 /** TODO: flush all queue */
                 delete_TCB();
@@ -257,7 +266,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                 if (is_between_wrapped(this->send.una - 1, ackn, this->send.nxt + 1)) {
                     // must have ACKed our SYN, since we detected at least one ACKed byte
                     // and we have only one byte (the SYN)
-                    this->state = State::Estab;
+                    this->change_state(State::Estab);
                 } else {
                     send_rst(dev, ip_h, tcp_h, slen);
                 }
@@ -311,7 +320,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                     if (this->send.una == send_closed_at + 1) {
                         // our FIN has been ACKed!
                         std::cout << "Our FIN has been ACKed" << std::endl;
-                        this->state = State::FinWait2;
+                        this->change_state(State::FinWait2);
                     }
                 }
                 if (this->state == State::FinWait2) {
@@ -320,8 +329,8 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                     the retransmission queue is empty, the user's CLOSE can be
                     acknowledged ("ok") but do not delete the TCB.
                     */
-                    if (unacked.data.size() == 0) {
-                        std::cout << "the user's CLOSE is acknowledged" << std::endl;
+                    if (unacked.data.empty()) {
+                        if (!tcp_h.fin()) std::cout << "the user's CLOSE is acknowledged" << std::endl;
                     }
                 }
                 if (this->state == State::Closing) {
@@ -329,7 +338,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                         // our FIN has been ACKed!
                         std::cout << "Our FIN has been ACKed" << std::endl;
 
-                        this->state = State::TimeWait;
+                        this->change_state(State::TimeWait);
                         this->start_close_timer();
                     }
                 }
@@ -394,13 +403,13 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
             this->write(dev, this->send.nxt, 0);
 
             if ((this->state == State::SynRcvd) || (this->state == State::Estab))
-                this->state = State::CloseWait;
-            else if (this->state == (State::FinWait1))
-                this->state = State::TimeWait;
-            else if (this->state == (State::FinWait2)) {
-                this->state = State::TimeWait;
+                this->change_state(State::CloseWait);
+            else if (this->state == State::FinWait1)
+                this->change_state(State::TimeWait);
+            else if (this->state == State::FinWait2) {
+                this->change_state(State::TimeWait);
                 start_close_timer();
-            } else if (this->state == (State::TimeWait))
+            } else if (this->state == State::TimeWait)
                 start_close_timer();
             else if ((this->state == State::CloseWait) || (this->state == State::Closing) || (this->state == State::LastAck))
                 return;
@@ -422,6 +431,18 @@ void Connection::on_tick(struct device *dev) {
     uint32_t nunacked_data = (send_closed_at != 0 ? send_closed_at : this->send.nxt) - this->send.una;
     uint32_t nunsent_data = (uint32_t)this->unacked.data.size() - nunacked_data;
 
+    // std::cout << "nunacked_data: " << nunacked_data << std::endl;
+    // std::cout << "nunsent_data: " << nunsent_data << std::endl;
+    // std::cout << "state: " << state << std::endl;
+
+    // if no data to send send FIN in CloseWait
+    if (state == State::CloseWait && nunacked_data == 0 && nunsent_data == 0) {
+        this->close_send();
+    }
+
+    if (nunacked_data == 0 && nunsent_data == 0) return;
+
+    // when std::next() called on last element of the container it returns the last element
     auto [first_unacked_key, first_unacked_value] = *(std::next(this->timers.send_times.begin(), this->send.una - this->send.iss));
     int64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - first_unacked_value).count();
 
@@ -455,9 +476,9 @@ void Connection::on_tick(struct device *dev) {
             this->send_closed_at = this->send.una + (uint32_t)this->unacked.data.size();
         }
 
-        if (send_limit == 0) {
-            return;
-        }
+        // if (send_limit == 0) {
+        //     return;
+        // }
 
         this->write(dev, this->send.una, send_limit);
     } else {
@@ -530,6 +551,12 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
         // trying to write following FIN
         offset = 0;
         limit = 0;
+
+        std::cout << "AAAAAAAAAAAAAAAA" << std::endl;
+        std::cout << "this->tcp.syn(): " << this->tcp.syn() << std::endl;
+        std::cout << "this->tcp.ack(): " << this->tcp.ack() << std::endl;
+        std::cout << "this->tcp.fin(): " << this->tcp.fin() << std::endl;
+        std::cout << "AAAAAAAAAAAAAAAA" << std::endl;
     }
 
     this->ip.set_size(20);
@@ -570,7 +597,7 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
         this->tcp.fin(false);
 
         // TODO: check if better place to implement this
-        if (this->state == State::SynRcvd || this->state == State::Estab) this->state = State::FinWait1;
+        if (this->state == State::SynRcvd || this->state == State::Estab) this->change_state(State::FinWait1);
     }
     if (this->tcp.rst()) this->tcp.rst(false);
 

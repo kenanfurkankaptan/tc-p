@@ -98,6 +98,13 @@ class Connection {
     std::mutex lockMutex;
 
     State state = State::Listen;
+    State previous_state = State::Closed;
+
+    inline void change_state(State new_state) {
+        this->previous_state = this->state;
+        this->state = new_state;
+    }
+
     SendSequenceSpace send;
     RecvSequenceSpace recv;
     Net::Ipv4Header ip;
