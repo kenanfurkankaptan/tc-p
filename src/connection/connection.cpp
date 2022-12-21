@@ -48,14 +48,14 @@ void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, u
     this->recv = RecvSequenceSpace();
     this->send = SendSequenceSpace{iss, iss, wnd, false, 0, 0, iss};
     this->ip = Net::Ipv4Header();
-    ip.source = src_ip;
-    ip.destination = dst_ip;
+    this->ip.source = src_ip;
+    this->ip.destination = dst_ip;
 
     this->tcp = Net::TcpHeader();
-    tcp.destination_port = dst_port;
-    tcp.source_port = src_port;
-    tcp.acknowledgment_number = 0;
-    tcp.window_size = wnd;
+    this->tcp.destination_port = dst_port;
+    this->tcp.source_port = src_port;
+    this->tcp.acknowledgment_number = 0;
+    this->tcp.window_size = wnd;
 
     this->incoming = Queue();
     this->unacked = Queue();
@@ -89,7 +89,14 @@ void Connection::delete_TCB() {
     return;
 }
 
-void Connection::close_send() { this->send_closed = true; }
+void Connection::close_send() {
+    // do it once
+    if (!this->send_closed) {
+        this->send_closed = true;
+        this->send_closed_at = this->send.una + (uint32_t)this->unacked.data.size() + 1;
+        if (this->state == State::SynRcvd || this->state == State::Estab) this->change_state(State::FinWait1);
+    }
+}
 
 void Connection::start_close_timer() {
     if (connection_is_closed)
@@ -375,7 +382,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                 /** TODO: refactor if needed **/
                 incoming.enqueue(data, data_len);
 
-                std::cout << "incoming data" << std::endl;
+                std::cout << "incoming data: ";
                 const unsigned char *ptr = data;
                 for (int i = 0; i < data_len; i++) {
                     std::cout << ptr[i];
@@ -426,25 +433,22 @@ void Connection::on_tick(struct device *dev) {
     if ((state == State::Closed) || (state == State::TimeWait) || (state == State::FinWait2)) {
         // we have shutdown our write side and the other side acked, no need to (re)transmit anything
         return;
-    }
-
-    uint32_t nunacked_data = (send_closed_at != 0 ? send_closed_at : this->send.nxt) - this->send.una;
-    uint32_t nunsent_data = (uint32_t)this->unacked.data.size() - nunacked_data;
-
-    // std::cout << "nunacked_data: " << nunacked_data << std::endl;
-    // std::cout << "nunsent_data: " << nunsent_data << std::endl;
-    // std::cout << "state: " << state << std::endl;
-
-    // if no data to send send FIN in CloseWait
-    if (state == State::CloseWait && nunacked_data == 0 && nunsent_data == 0) {
+    } else if (state == State::CloseWait) {
         this->close_send();
     }
 
-    if (nunacked_data == 0 && nunsent_data == 0) return;
+    // nunacked_data and nunsent_data includes SYN and FIN flag
+    uint32_t nunacked_data = this->send.nxt - this->send.una;
+    uint32_t nunsent_data = nunacked_data > (uint32_t)this->unacked.data.size() ? 0 : (uint32_t)this->unacked.data.size() - nunacked_data;
 
-    // when std::next() called on last element of the container it returns the last element
-    auto [first_unacked_key, first_unacked_value] = *(std::next(this->timers.send_times.begin(), this->send.una - this->send.iss));
-    int64_t waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - first_unacked_value).count();
+    int64_t waited_for = 0;
+
+    // key exists, there is a possibility of retransmission
+    auto first_unacked_key = this->send.una;
+    if (this->timers.send_times.count(first_unacked_key) == 1) {
+        auto first_unacked_value = this->timers.send_times.at(this->send.una);
+        waited_for = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - first_unacked_value).count();
+    }
 
     /** RTO = min[UPPERBOUND,max[LOWERBOUND,(BETA*SRTT)]]
      * Beta is taken as 1.5
@@ -452,9 +456,16 @@ void Connection::on_tick(struct device *dev) {
      * Lower limit is 1 sec
      */
     bool should_retransmit = ([&]() {
-        // 1 * 1000000 = 1 second
-        // 60 * 1000000 = 60 second
-        return ((waited_for > (1 * 1000000)) && (waited_for > (((int64_t)1.5) * this->timers.srtt))) || (waited_for > (60 * 1000000));
+        // nunacked data exist, check timers for retransmission
+        if (nunacked_data > 0) {
+            // 1 * 1000000 = 1 second
+            // 60 * 1000000 = 60 second
+            return ((waited_for > (1 * 1000000)) && (waited_for > (((int64_t)1.5) * this->timers.srtt))) || (waited_for > (60 * 1000000));
+        }
+        // nunacked data does not exist, we may need to send new data
+        else {
+            return false;
+        }
     }());
 
     if (should_retransmit) {
@@ -471,34 +482,26 @@ void Connection::on_tick(struct device *dev) {
 
         if (send_limit < this->send.wnd && this->send_closed) {
             std::cout << "Resend FIN" << std::endl;
-
             this->tcp.fin(true);
-            this->send_closed_at = this->send.una + (uint32_t)this->unacked.data.size();
+        } else if (send_limit == 0) {
+            return;
         }
-
-        // if (send_limit == 0) {
-        //     return;
-        // }
 
         this->write(dev, this->send.una, send_limit);
     } else {
-        // we havent sent data yet
-        if ((this->state == State::SynRcvd) || (this->state == State::SynSent)) return;
-        if (this->unacked.data.empty()) return;
-
         // we should send new data if have new data and space in the window
-        if (nunsent_data == 0 && this->send_closed_at != 0) return;
+        if (nunsent_data == 0 && this->send_closed_at == 0) return;
+
+        // sent FIN once, if transmitted before only retransmit
+        if (this->send_closed_at == this->send.nxt) return;
 
         uint32_t allowed = this->send.wnd - nunacked_data;
         if (allowed == 0) return;
 
         uint32_t send_limit = std::min(nunsent_data, allowed);
-        if (send_limit < allowed && this->send_closed && this->send_closed_at == 0) {
+        if (send_limit < allowed && this->send_closed) {
             this->tcp.fin(true);
-            this->send_closed_at = this->send.una + (uint32_t)this->unacked.data.size();
-        }
-
-        if (send_limit == 0) {
+        } else if (send_limit == 0) {
             return;
         }
 
@@ -552,11 +555,11 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
         offset = 0;
         limit = 0;
 
-        std::cout << "AAAAAAAAAAAAAAAA" << std::endl;
-        std::cout << "this->tcp.syn(): " << this->tcp.syn() << std::endl;
-        std::cout << "this->tcp.ack(): " << this->tcp.ack() << std::endl;
-        std::cout << "this->tcp.fin(): " << this->tcp.fin() << std::endl;
-        std::cout << "AAAAAAAAAAAAAAAA" << std::endl;
+        // std::cout << "AAAAAAAAAAAAAAAA" << std::endl;
+        // std::cout << "this->tcp.syn(): " << this->tcp.syn() << std::endl;
+        // std::cout << "this->tcp.ack(): " << this->tcp.ack() << std::endl;
+        // std::cout << "this->tcp.fin(): " << this->tcp.fin() << std::endl;
+        // std::cout << "AAAAAAAAAAAAAAAA" << std::endl;
     }
 
     this->ip.set_size(20);
@@ -595,9 +598,6 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     if (this->tcp.fin()) {
         ++next_seq;
         this->tcp.fin(false);
-
-        // TODO: check if better place to implement this
-        if (this->state == State::SynRcvd || this->state == State::Estab) this->change_state(State::FinWait1);
     }
     if (this->tcp.rst()) this->tcp.rst(false);
 
@@ -696,4 +696,18 @@ bool Connection::is_snd_closed() const {
     return (state == State::FinWait1) || (state == State::FinWait2) || (state == State::Closing) || (state == State::LastAck) || (state == State::Closed)
                ? true
                : false;
+}
+
+void Connection::send_data(std::string &data) {
+    if ((this->state == State::Closed))
+        std::cout << "error: connection does not exist" << std::endl;
+    else if ((this->state == State::Listen))
+        std::cout << "error: foreign socket unspecified (not implemented)" << std::endl;
+    else if ((this->state == State::SynRcvd) || (this->state == State::SynSent))
+        std::cout << "error: insufficient resources" << std::endl;
+    else if ((this->state == State::Estab) || (this->state == State::CloseWait))
+        this->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), (int)data.length());
+    else if ((this->state == State::FinWait1) || (this->state == State::FinWait2) || (this->state == State::Closing) || (this->state == State::LastAck) ||
+             (this->state == State::TimeWait))
+        std::cout << "error: connection closing" << std::endl;
 }

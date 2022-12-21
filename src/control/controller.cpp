@@ -47,10 +47,12 @@ void Controller::listen_port(uint16_t port) {
 void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) {
     for (auto c : connection_list) {
         if (*c == ConnectionInfo(src_ip, dst_ip, src_port, dst_port)) {
-            c->connection->unacked.enqueue(reinterpret_cast<uint8_t *>(&data[0]), (int)data.length());
-
             // TODO: it added for tests, remove it later
-            if (data == "exit") c->connection->close_send();
+            if (data == "exit") {
+                c->connection->close_send();
+            } else {
+                c->connection->send_data(data);
+            }
             return;
         }
     }
@@ -58,10 +60,11 @@ void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t 
 }
 
 void Controller::add_connection(ConnectionInfo *connection_info) {
-    connection_info->create_new_connection();
-    this->connection_list.push_back(connection_info);
+    auto temp_connection = new ConnectionInfo(connection_info->src_ip, connection_info->dst_ip, connection_info->src_port, connection_info->dst_port);
+    connection_list.push_back(temp_connection);
+    connection_list.back()->create_new_connection()->connect(dev, connection_info->src_ip, connection_info->dst_ip, connection_info->src_port,
+                                                             connection_info->dst_port);
 
-    connection_info->connection->connect(dev, connection_info->src_ip, connection_info->dst_ip, connection_info->src_port, connection_info->dst_port);
     std::cout << "start connection on port: " << connection_info->dst_port << std::endl;
 }
 

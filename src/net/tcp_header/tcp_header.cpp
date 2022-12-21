@@ -8,7 +8,16 @@
 
 namespace Net {
 
-TcpHeader::TcpHeader() : ntoh{true} {};
+TcpHeader::TcpHeader() : ntoh{true} {
+    source_port = 0;
+    destination_port = 0;
+    sequence_number = 0;
+    acknowledgment_number = 0;
+    data_offset_and_flags = 0;
+    window_size = 0;
+    checksum = 0;
+    urgent_pointer = 0;
+};
 
 TcpHeader::TcpHeader(std::istream &stream, bool ntoh) : ntoh{ntoh} {
     stream.read((char *)&source_port, sizeof(source_port));
