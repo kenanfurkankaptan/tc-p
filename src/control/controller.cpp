@@ -59,6 +59,8 @@ void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t 
     std::cout << "connection not found!!" << std::endl;
 }
 
+// add_connection() accepts ip's as host byte order.
+// use ntohl to convert them network byte order to host byte order.
 void Controller::add_connection(ConnectionInfo *connection_info) {
     auto temp_connection = new ConnectionInfo(connection_info->src_ip, connection_info->dst_ip, connection_info->src_port, connection_info->dst_port);
     connection_list.push_back(temp_connection);
@@ -93,9 +95,11 @@ void Controller::packet_loop() {
     });
 
     while (true) {
+        // create and reset buffer
         char buff[1500];
         memset(buff, 0, 1500);
 
+        // blocks until tuntap read
         tuntap_read(dev, buff, 1500);
 
         membuf ip_buf(buff, buff + sizeof(buff));
@@ -115,7 +119,6 @@ void Controller::packet_loop() {
         membuf tcp_buf(buff + ip.get_size(), buff + sizeof(buff));
         std::istream tcp_packet(&tcp_buf);
 
-        /** TODO: consider memmove */
         auto tcp = Net::TcpHeader(tcp_packet, true);
 
         uint8_t *data = (uint8_t *)buff + ip.get_size() + tcp.get_header_len();

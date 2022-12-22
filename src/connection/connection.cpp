@@ -428,7 +428,6 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
     return;
 }
 
-/** TODO: fix on_tick for sending syn-fin flags **/
 void Connection::on_tick(struct device *dev) {
     if ((state == State::Closed) || (state == State::TimeWait) || (state == State::FinWait2)) {
         // we have shutdown our write side and the other side acked, no need to (re)transmit anything
@@ -510,15 +509,14 @@ void Connection::on_tick(struct device *dev) {
     return;
 }
 
-/**
- * TODO: fix flush for sending syn-fin flags
- */
+/** TODO: should we include syn-fin flags in flush() ?? */
 void Connection::flush(struct device *dev) {
-    uint32_t nunacked_data = (send_closed_at != 0 ? send_closed_at : this->send.nxt) - this->send.una;
-    uint32_t nunsent_data = (uint32_t)this->unacked.data.size() - nunacked_data;
+    // nunacked_data and nunsent_data includes SYN and FIN flag
+    uint32_t nunacked_data = this->send.nxt - this->send.una;
+    uint32_t nunsent_data = nunacked_data > (uint32_t)this->unacked.data.size() ? 0 : (uint32_t)this->unacked.data.size() - nunacked_data;
 
     // we should send new data if have new data and space in the window
-    if (nunsent_data == 0 && this->send_closed_at != 0) {
+    if ((nunacked_data == 0) && (nunsent_data == 0)) {
         return;
     }
 
@@ -554,12 +552,6 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
         // trying to write following FIN
         offset = 0;
         limit = 0;
-
-        // std::cout << "AAAAAAAAAAAAAAAA" << std::endl;
-        // std::cout << "this->tcp.syn(): " << this->tcp.syn() << std::endl;
-        // std::cout << "this->tcp.ack(): " << this->tcp.ack() << std::endl;
-        // std::cout << "this->tcp.fin(): " << this->tcp.fin() << std::endl;
-        // std::cout << "AAAAAAAAAAAAAAAA" << std::endl;
     }
 
     this->ip.set_size(20);
@@ -680,11 +672,6 @@ bool Connection::sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t we
         }
     };
 };
-
-//-------------------------------------------------------
-
-/** TODO: implement if needed */
-void Connection::availability() const { return; }
 
 bool Connection::is_rcv_closed() const {
     return (state == State::TimeWait) || (state == State::CloseWait) || (state == State::LastAck) || (state == State::Closed) || (state == State::Closing)

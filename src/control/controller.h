@@ -13,7 +13,7 @@ class Controller {
    public:
     struct device *dev;
 
-    // TODO: std::shared_ptr could be useful here
+    /** TODO: std::shared_ptr could be useful here */
     std::vector<ConnectionInfo *> connection_list;
     std::vector<uint16_t> listened_ports;
 

@@ -54,8 +54,9 @@ TcpHeader::TcpHeader(const uint8_t *data, bool ntoh) : ntoh{ntoh} {
     checksum = data[17] << 8 | (data[18] & 0xFF);
     urgent_pointer = data[19] << 8 | (data[20] & 0xFF);
 
-    // TODO: fix options
-    *(this->options) = {};
+    for (int i = 0; i < (((ntohs(data_offset_and_flags) & 0xF000) >> 12) * sizeof(uint32_t)) - 20; i++) {
+        options[i] = data[i + 20];
+    }
 
     if (ntoh) {
         source_port = ntohs(source_port);

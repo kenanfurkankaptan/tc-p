@@ -147,9 +147,6 @@ class Connection {
     bool is_snd_closed() const;
 
     void send_data(std::string &data);
-
-    /** TODO: define or delete functions below **/
-    void availability() const;
 };
 
 #endif /* CONNECTION_H */

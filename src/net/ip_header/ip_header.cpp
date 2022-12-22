@@ -65,8 +65,9 @@ Ipv4Header::Ipv4Header(uint8_t *data, bool ntoh) {
     source = data[12] << 24 | data[13] << 16 | data[14] << 8 | data[15];
     destination = data[16] << 24 | data[17] << 16 | data[18] << 8 | data[19];
 
-    // TODO: fix options
-    *(this->options) = {};
+    for (int i = 0; i < ((ver_ihl & 0x0F) * sizeof(uint32_t) - 20) - 20; i++) {
+        options[i] = data[i + 20];
+    }
 
     if (ntoh) {
         payload_len = ntohs(payload_len);
@@ -113,13 +114,9 @@ void Ipv4Header::write_to_buff(char *buff) {
     return;
 }
 
-uint8_t Ipv4Header::ip_version() const {
-    return (ver_ihl & 0xF0) >> 4;
-}
+uint8_t Ipv4Header::ip_version() const { return (ver_ihl & 0xF0) >> 4; }
 
-uint16_t Ipv4Header::get_size() const {
-    return (ver_ihl & 0x0F) * sizeof(uint32_t);
-}
+uint16_t Ipv4Header::get_size() const { return (ver_ihl & 0x0F) * sizeof(uint32_t); }
 
 void Ipv4Header::set_size(uint8_t size) {
     if (size > 60) {
