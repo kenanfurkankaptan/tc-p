@@ -48,7 +48,7 @@ void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t 
     for (auto c : connection_list) {
         if (*c == ConnectionInfo(src_ip, dst_ip, src_port, dst_port)) {
             // TODO: it added for tests, remove it later
-            if (data == "exit") {
+            if (data == "exit\n") {
                 c->connection->close_send();
             } else {
                 c->connection->send_data(data);

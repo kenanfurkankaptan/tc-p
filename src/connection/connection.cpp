@@ -94,7 +94,10 @@ void Connection::close_send() {
     if (!this->send_closed) {
         this->send_closed = true;
         this->send_closed_at = this->send.una + (uint32_t)this->unacked.data.size() + 1;
-        if (this->state == State::SynRcvd || this->state == State::Estab) this->change_state(State::FinWait1);
+        if (this->state == State::SynRcvd || this->state == State::Estab)
+            this->change_state(State::FinWait1);
+        else if (this->state == State::CloseWait)
+            this->change_state(State::LastAck);
     }
 }
 
@@ -180,8 +183,10 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
             this->send.nxt = tcp_h.sequence_number + 1;
             this->recv.irs = tcp_h.sequence_number;
             this->send.una = is_ack_acceptable ? tcp_h.acknowledgment_number : this->send.una;
-            /** TODO: any segments on the retransmission queue which
-            are thereby acknowledged should be removed */
+
+            // any segments on the retransmission queue which are thereby acknowledged should be removed
+            this->unacked.data.clear();
+            this->timers.send_times.clear();
 
             /** If SND.UNA > ISS (our SYN has been ACKed) */
             if (this->send.una > this->send.iss) {
@@ -250,7 +255,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                     return;
                 }
             } else if ((state == State::Estab) || (state == State::FinWait1) || (state == State::FinWait2) || (state == State::CloseWait)) {
-                /** TODO: flush all queue */
+                flush(dev);
                 delete_TCB();
             } else if ((state == State::Closing) || (state == State::LastAck) || (state == State::TimeWait)) {
                 delete_TCB();
@@ -261,8 +266,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
 
         if (tcp_h.syn()) {
             this->send_rst(dev, ip_h, tcp_h, slen);
-
-            /** TODO: flush */
+            flush(dev);
             return;
         }
 
@@ -295,8 +299,8 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                         this->unacked.remove(acked_data_end);
 
                         std::map<uint32_t, std::chrono::_V2::system_clock::time_point>::const_iterator itr;
-                        auto map2 = this->timers.send_times;
-                        for (itr = map2.cbegin(); itr != map2.cend();) {
+                        auto send_times_map = this->timers.send_times;
+                        for (itr = send_times_map.cbegin(); itr != send_times_map.cend();) {
                             itr = ([&]() {
                                 auto seq = itr->first;
                                 auto sent = itr->second;
@@ -311,7 +315,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                                     return false;
                                 }
                             }())
-                                      ? map2.erase(itr)
+                                      ? send_times_map.erase(itr)
                                       : std::next(itr);
                         }
                     }
@@ -324,7 +328,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
 
                 if (this->state == State::FinWait1) {
                     // receive ack for out FIN
-                    if (this->send.una == send_closed_at + 1) {
+                    if (this->send.una == send_closed_at) {
                         // our FIN has been ACKed!
                         std::cout << "Our FIN has been ACKed" << std::endl;
                         this->change_state(State::FinWait2);
@@ -341,7 +345,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                     }
                 }
                 if (this->state == State::Closing) {
-                    if (this->send.una == send_closed_at + 1) {
+                    if (this->send.una == send_closed_at) {
                         // our FIN has been ACKed!
                         std::cout << "Our FIN has been ACKed" << std::endl;
 
@@ -352,7 +356,11 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
             }
             // receive ack for out FIN
             if (this->state == State::LastAck) {
-                if (this->send.una == send_closed_at + 1) {
+                std::cout << "this->send.una: " << this->send.una << std::endl;
+                std::cout << "send_closed_at: " << send_closed_at << std::endl;
+                std::cout << "ackn: " << ackn << std::endl;
+
+                if (ackn == send_closed_at) {
                     // our FIN has been ACKed!
                     std::cout << "Our FIN has been ACKed" << std::endl;
                     delete_TCB();
@@ -378,8 +386,6 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                     assert(unread_data_at == (uint32_t)(data_len + 1));
                     unread_data_at = 0;
                 }
-
-                /** TODO: refactor if needed **/
                 incoming.enqueue(data, data_len);
 
                 std::cout << "incoming data: ";
@@ -509,7 +515,7 @@ void Connection::on_tick(struct device *dev) {
     return;
 }
 
-/** TODO: should we include syn-fin flags in flush() ?? */
+/** should we include syn-fin flags in flush() ?? */
 void Connection::flush(struct device *dev) {
     // nunacked_data and nunsent_data includes SYN and FIN flag
     uint32_t nunacked_data = this->send.nxt - this->send.una;
