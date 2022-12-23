@@ -7,10 +7,9 @@
 namespace Net {
 
 class Ipv4Header {
-   private:
+   public:
     bool ntoh;
 
-   public:
     uint8_t ver_ihl;  // 4 bits version and 4 bits internet protocol header length
     uint8_t tos;
     uint16_t payload_len;  // total ip packet size
@@ -22,6 +21,7 @@ class Ipv4Header {
     uint32_t source;
     uint32_t destination;
 
+    // options array is not dynamically allocated, it does not delete required
     uint8_t options[40] = {};
 
     Ipv4Header();

@@ -20,6 +20,8 @@ int main() {
     ctrl.listen_port(9000);
     ctrl.listen_port(9500);
 
+    ctrl.packet_loop();
+
     // std::this_thread::sleep_for(std::chrono::seconds(10));
 
     // uint8_t src_ip_arr[] = {192, 168, 0, 3};
@@ -29,7 +31,7 @@ int main() {
     // ctrl.add_connection(new ConnectionInfo(src_ip, dst_ip, 8500, 8600));
 
     /** TODO: consider running packet loop in another thread */
-    ctrl.packet_loop();
+    // ctrl.packet_loop();
 
     return 0;
 }

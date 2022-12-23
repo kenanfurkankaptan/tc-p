@@ -16,7 +16,7 @@ class ConnectionInfo {
         {"test3", "test data 3 received\n"}, {"test4", "test data 4 received\n"}, {"exit", "exit\n"},
     };
 
-    ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::map<std::string, std::string> response_table = {});
+    ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, const std::map<std::string, std::string> &response_table = {});
     ~ConnectionInfo();
 
     bool check_if_connection_closed() const;

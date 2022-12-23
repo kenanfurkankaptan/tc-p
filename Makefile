@@ -43,7 +43,7 @@ LEAK = -fsanitize=leak
 
 
 # thread sanitizer is not compatible with address sanitizers, undefined sanitizers or leak saintizers
-CPPFLAGS += $(COMPILER_WARNINGS) $(UNDEFINED) $(ADDRESS) 
+CPPFLAGS += $(COMPILER_WARNINGS) $(UNDEFINED) $(ADDRESS)
 
 
 # The build target 

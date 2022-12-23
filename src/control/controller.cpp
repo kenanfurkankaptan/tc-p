@@ -30,11 +30,12 @@ Controller::Controller() {
 
 /** TODO: fix destroy */
 Controller::~Controller() {
-    // tuntap_down(dev);
-    // tuntap_release(dev);
-    // tuntap_destroy(dev);
+    tuntap_down(dev);
+    tuntap_destroy(dev);
 
-    // delete dev;
+    for (auto p : connection_list) {
+        delete p;
+    }
     connection_list.clear();
     listened_ports.clear();
 }
@@ -47,7 +48,7 @@ void Controller::listen_port(uint16_t port) {
 void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) {
     for (auto c : connection_list) {
         if (*c == ConnectionInfo(src_ip, dst_ip, src_port, dst_port)) {
-            // TODO: it added for tests, remove it later
+            /** TODO: it added for tests, remove it later */
             if (data == "exit\n") {
                 c->connection->close_send();
             } else {
@@ -73,7 +74,7 @@ void Controller::add_connection(ConnectionInfo *connection_info) {
 void Controller::packet_loop() {
     /** TODO: refactor in a better way */
     // wake up every 1 ms
-    std::thread timer_loop([&]() {
+    std::jthread timer_loop([&]() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
 

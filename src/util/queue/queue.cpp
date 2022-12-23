@@ -3,9 +3,7 @@
 #include <iostream>
 #include <queue>
 
-void Queue::operator=(const Queue &q) {
-    this->data = q.data;
-}
+void Queue::operator=(const Queue &q) { this->data = q.data; }
 
 int Queue::enqueue(uint8_t *array, int bytesToWrite) {
     std::lock_guard<std::mutex> lock(lockMutex);

@@ -356,10 +356,6 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
             }
             // receive ack for out FIN
             if (this->state == State::LastAck) {
-                std::cout << "this->send.una: " << this->send.una << std::endl;
-                std::cout << "send_closed_at: " << send_closed_at << std::endl;
-                std::cout << "ackn: " << ackn << std::endl;
-
                 if (ackn == send_closed_at) {
                     // our FIN has been ACKed!
                     std::cout << "Our FIN has been ACKed" << std::endl;

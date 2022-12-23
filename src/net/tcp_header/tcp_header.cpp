@@ -116,20 +116,23 @@ uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, i
     uint32_t sum = 0;
 
     // add psudo ip header
-    sum += ((uint16_t *)&ip_h.source)[0];  // get firs part
-    sum += ((uint16_t *)&ip_h.source)[1];  // and second part
-    sum += ((uint16_t *)&ip_h.destination)[0];
-    sum += ((uint16_t *)&ip_h.destination)[1];
+    sum += (uint16_t)(ip_h.source & 0xFFFF);          // get firs part
+    sum += (uint16_t)((ip_h.source >> 16) & 0xFFFF);  // and second part
+    sum += (uint16_t)(ip_h.destination & 0xFFFF);
+    sum += (uint16_t)((ip_h.destination >> 16) & 0xFFFF);
+
     sum += IPPROTO_TCP & 0x000F;                // add the protocol, it always will be tcp protocol
     sum += ip_h.payload_len - ip_h.get_size();  // tcp len, it includes data len
 
     // add tcp header
     sum += source_port;
     sum += destination_port;
-    sum += ((uint16_t *)&sequence_number)[0];
-    sum += ((uint16_t *)&sequence_number)[1];
-    sum += ((uint16_t *)&acknowledgment_number)[0];
-    sum += ((uint16_t *)&acknowledgment_number)[1];
+
+    sum += (uint16_t)(sequence_number & 0xFFFF);          // get firs part
+    sum += (uint16_t)((sequence_number >> 16) & 0xFFFF);  // and second part
+    sum += (uint16_t)(acknowledgment_number & 0xFFFF);
+    sum += (uint16_t)((acknowledgment_number >> 16) & 0xFFFF);
+
     sum += data_offset_and_flags;
     sum += window_size;
     // sum += checksum;  // it should be 0, calculate it without checksum

@@ -21,6 +21,7 @@ class TcpHeader {
     uint16_t checksum;
     uint16_t urgent_pointer;
 
+    // options array is not dynamically allocated, it does not delete required
     uint8_t options[40] = {};
 
     TcpHeader();
