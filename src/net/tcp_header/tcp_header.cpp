@@ -54,7 +54,7 @@ TcpHeader::TcpHeader(const uint8_t *data, bool ntoh) : ntoh{ntoh} {
     checksum = data[17] << 8 | (data[18] & 0xFF);
     urgent_pointer = data[19] << 8 | (data[20] & 0xFF);
 
-    for (int i = 0; i < (((ntohs(data_offset_and_flags) & 0xF000) >> 12) * sizeof(uint32_t)) - 20; i++) {
+    for (uint8_t i = 0; i < (((ntohs(data_offset_and_flags) & 0xF000) >> 12) * sizeof(uint32_t)) - 20; i++) {
         options[i] = data[i + 20];
     }
 
@@ -116,10 +116,15 @@ uint16_t TcpHeader::compute_tcp_checksum(Net::Ipv4Header &ip_h, uint8_t *data, i
     uint32_t sum = 0;
 
     // add psudo ip header
-    sum += (uint16_t)(ip_h.source & 0xFFFF);          // get firs part
-    sum += (uint16_t)((ip_h.source >> 16) & 0xFFFF);  // and second part
-    sum += (uint16_t)(ip_h.destination & 0xFFFF);
-    sum += (uint16_t)((ip_h.destination >> 16) & 0xFFFF);
+    sum += ((uint16_t *)&ip_h.source)[0];  // get firs part
+    sum += ((uint16_t *)&ip_h.source)[1];  // and second part
+    sum += ((uint16_t *)&ip_h.destination)[0];
+    sum += ((uint16_t *)&ip_h.destination)[1];
+
+    // sum += (uint16_t)(ip_h.source & 0xFFFF);          // get firs part
+    // sum += (uint16_t)((ip_h.source >> 16) & 0xFFFF);  // and second part
+    // sum += (uint16_t)(ip_h.destination & 0xFFFF);
+    // sum += (uint16_t)((ip_h.destination >> 16) & 0xFFFF);
 
     sum += IPPROTO_TCP & 0x000F;                // add the protocol, it always will be tcp protocol
     sum += ip_h.payload_len - ip_h.get_size();  // tcp len, it includes data len
@@ -179,7 +184,7 @@ void TcpHeader::set_header_len(uint16_t len) {
         this->data_offset_and_flags = 0xF000;
         return;
     }
-    this->data_offset_and_flags ^= (((len / sizeof(uint32_t)) << 12) ^ this->data_offset_and_flags) & 0xF000U;
+    this->data_offset_and_flags ^= (uint16_t)((((len / sizeof(uint32_t)) << 12) ^ this->data_offset_and_flags) & 0xF000U);
 }
 
 /* get flags */

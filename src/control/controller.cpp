@@ -30,14 +30,14 @@ Controller::Controller() {
 
 /** TODO: fix destroy */
 Controller::~Controller() {
-    tuntap_down(dev);
-    tuntap_destroy(dev);
-
     for (auto p : connection_list) {
         delete p;
     }
     connection_list.clear();
     listened_ports.clear();
+
+    tuntap_down(dev);
+    tuntap_destroy(dev);
 }
 
 void Controller::listen_port(uint16_t port) {
@@ -78,9 +78,10 @@ void Controller::packet_loop() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
+            // TODO: mutex locks whole loop unnecessarily find better way
+            std::lock_guard connection_list_guard(this->connection_list_mutex);
             for (int idx = 0; auto c : connection_list) {
                 if (c->connection == nullptr) return;
-                std::lock_guard<std::mutex> guard(c->connection->lockMutex);
                 c->connection->on_tick(dev);
                 c->connection->check_close_timer();
 
@@ -125,6 +126,9 @@ void Controller::packet_loop() {
         uint8_t *data = (uint8_t *)buff + ip.get_size() + tcp.get_header_len();
         int data_len = ip.payload_len - (ip.get_size() + tcp.get_header_len());
 
+        // TODO: mutex locks whole loop unnecessarily find better way
+        std::lock_guard connection_list_guard(this->connection_list_mutex);
+
         // check if same connection established before
         auto index_iterator = std::ranges::find_if(connection_list.begin(), connection_list.end(), [&](ConnectionInfo const *c) {
             return c->src_ip == ip.source && c->dst_ip == ip.destination && c->src_port == tcp.source_port && c->dst_port == tcp.destination_port;
@@ -133,6 +137,7 @@ void Controller::packet_loop() {
             // connection is exist
             long int index = index_iterator - connection_list.begin();
             auto index_connection = connection_list.at(index);
+
             index_connection->connection->on_packet(dev, ip, tcp, data, data_len);
 
             if (data_len > 0) {
@@ -150,6 +155,7 @@ void Controller::packet_loop() {
             if (std::ranges::find(listened_ports.begin(), listened_ports.end(), tcp.destination_port) != listened_ports.end()) {
                 // port is accepted, create new connection
                 auto temp_connection = new ConnectionInfo(ip.source, ip.destination, tcp.source_port, tcp.destination_port);
+
                 connection_list.push_back(temp_connection);
                 connection_list.back()->create_new_connection()->on_packet(dev, ip, tcp, data, data_len);
 

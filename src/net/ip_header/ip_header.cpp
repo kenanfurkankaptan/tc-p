@@ -56,16 +56,16 @@ Ipv4Header::Ipv4Header(uint8_t *data, bool ntoh) {
 
     ver_ihl = data[0];
     tos = data[1];
-    payload_len = data[2] << 8 | (data[3] & 0xFF);
-    identification = data[4] << 8 | (data[5] & 0xFF);
-    flags_fo = data[6] << 8 | (data[7] & 0xFF);
+    payload_len = uint16_t(data[2] << 8 | data[3]);
+    identification = uint16_t(data[4] << 8 | (data[5]));
+    flags_fo = uint16_t(data[6] << 8 | data[7]);
     time_to_live = data[8];
     protocol = data[9];
-    header_checksum = data[10] << 8 | (data[11] & 0xFF);
+    header_checksum = uint16_t(data[10] << 8 | data[11]);
     source = data[12] << 24 | data[13] << 16 | data[14] << 8 | data[15];
     destination = data[16] << 24 | data[17] << 16 | data[18] << 8 | data[19];
 
-    for (int i = 0; i < ((ver_ihl & 0x0F) * sizeof(uint32_t) - 20) - 20; i++) {
+    for (uint8_t i = 0; i < ((ver_ihl & 0x0F) * sizeof(uint32_t) - 20) - 20; i++) {
         options[i] = data[i + 20];
     }
 
@@ -124,7 +124,7 @@ void Ipv4Header::set_size(uint8_t size) {
         this->ver_ihl = 0x0F;
         return;
     }
-    this->ver_ihl ^= ((size / sizeof(uint32_t)) ^ this->ver_ihl) & (0x0F);
+    this->ver_ihl ^= (uint8_t)(((size / sizeof(uint32_t)) ^ this->ver_ihl) & 0x0F);
 }
 
 /**

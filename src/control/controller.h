@@ -17,6 +17,8 @@ class Controller {
     std::vector<ConnectionInfo *> connection_list;
     std::vector<uint16_t> listened_ports;
 
+    std::mutex connection_list_mutex;
+
     Controller();
     ~Controller();
 
