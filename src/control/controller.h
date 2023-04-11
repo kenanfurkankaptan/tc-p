@@ -24,8 +24,8 @@ class Controller {
 
     void packet_loop();
     void listen_port(uint16_t port);
-    void write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data);
-    void add_connection(ConnectionInfo *connection_info);
+    void write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) const;
+    void add_connection(const ConnectionInfo *connection_info);
 };
 
 #endif /* CONTROLLER_H */

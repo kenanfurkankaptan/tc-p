@@ -60,10 +60,10 @@ void test_tcp_options(Net::TcpHeader &tcp) {
 
 //-------------------------------------------------------------------------------------------
 
-void test_connection(const Connection &connection) {
-    std::cout << "src ip: " << connection.ip.source << std::endl;
-    std::cout << "src port: " << connection.tcp.source_port << std::endl;
-    std::cout << "dst ip: " << connection.ip.destination << std::endl;
-    std::cout << "dst port: " << connection.tcp.destination_port << std::endl;
+// void test_connection(const Connection &connection) {
+    // std::cout << "src ip: " << connection.ip.source << std::endl;
+    // std::cout << "src port: " << connection.tcp.source_port << std::endl;
+    // std::cout << "dst ip: " << connection.ip.destination << std::endl;
+    // std::cout << "dst port: " << connection.tcp.destination_port << std::endl;
     // std::cout << "state: " << connection.state << std::endl;
-}
+// }

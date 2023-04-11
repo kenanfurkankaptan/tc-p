@@ -26,9 +26,9 @@ void Connection::accept(struct device *dev, const Net::Ipv4Header &ip_h, const N
     }());
     this->incoming = Queue();
     this->unacked = Queue();
-    this->send_closed = false;
+    this->is_send_closed = false;
     this->send_closed_at = 0;
-    this->connection_is_closed = false;
+    this->connection_closed = false;
 
     // needs to start establishing connection
     this->tcp.syn(true);
@@ -39,6 +39,8 @@ void Connection::accept(struct device *dev, const Net::Ipv4Header &ip_h, const N
 }
 
 void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port) {
+    std::scoped_lock<std::mutex> lock(lockMutex);
+
     uint16_t iss = 0;
     uint16_t wnd = 1024;
 
@@ -59,9 +61,9 @@ void Connection::connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, u
 
     this->incoming = Queue();
     this->unacked = Queue();
-    this->send_closed = false;
+    this->is_send_closed = false;
     this->send_closed_at = 0;
-    this->connection_is_closed = false;
+    this->connection_closed = false;
 
     // needs to start establishing connection
     this->tcp.syn(true);
@@ -80,9 +82,9 @@ void Connection::delete_TCB() {
     this->tcp = Net::TcpHeader();
     this->incoming = Queue();
     this->unacked = Queue();
-    this->send_closed = false;
+    this->is_send_closed = true;
     this->send_closed_at = 0;
-    this->connection_is_closed = false;
+    this->connection_closed = true;
 
     std::cout << "TCB is deleted" << std::endl;
 
@@ -90,10 +92,12 @@ void Connection::delete_TCB() {
 }
 
 void Connection::close_send() {
+    std::scoped_lock<std::mutex> lock(lockMutex);
+
     // do it once
-    if (!this->send_closed) {
-        this->send_closed = true;
-        this->send_closed_at = this->send.una + (uint32_t)this->unacked.data.size() + 1;
+    if (!this->is_send_closed) {
+        this->is_send_closed = true;
+        this->send_closed_at = this->send.una + (uint32_t)this->unacked.get_size() + 1;
         if (this->state == State::SynRcvd || this->state == State::Estab)
             this->change_state(State::FinWait1);
         else if (this->state == State::CloseWait)
@@ -102,18 +106,20 @@ void Connection::close_send() {
 }
 
 void Connection::start_close_timer() {
-    if (connection_is_closed)
+    if (connection_closed)
         std::cout << "close timer restarted" << std::endl;
     else
         std::cout << "close timer started" << std::endl;
 
-    connection_is_closed = true;
+    connection_closed = true;
     connection_close_start_time = std::chrono::high_resolution_clock::now();
 }
 
 void Connection::check_close_timer() {
+    std::scoped_lock<std::mutex> lock(lockMutex);
+
     // connection is still active no need to check
-    if (!this->connection_is_closed) return;
+    if (!this->connection_closed) return;
 
     auto time_passed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - connection_close_start_time).count();
 
@@ -123,6 +129,8 @@ void Connection::check_close_timer() {
 }
 
 void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, const Net ::TcpHeader &tcp_h, uint8_t *data, int data_len) {
+    std::scoped_lock<std::mutex> lock(lockMutex);
+
     uint32_t seqn = tcp_h.sequence_number;            // sequence number
     uint32_t ackn = tcp_h.acknowledgment_number;      // ack number
     uint32_t wend = this->recv.nxt + this->recv.wnd;  // window end
@@ -185,7 +193,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
             this->send.una = is_ack_acceptable ? tcp_h.acknowledgment_number : this->send.una;
 
             // any segments on the retransmission queue which are thereby acknowledged should be removed
-            this->unacked.data.clear();
+            this->unacked.empty();
             this->timers.send_times.clear();
 
             /** If SND.UNA > ISS (our SYN has been ACKed) */
@@ -285,17 +293,17 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
             if ((state == State::Estab) || (state == State::FinWait1) || (state == State::FinWait2) || (state == State::CloseWait) ||
                 (state == State::Closing)) {
                 if (is_between_wrapped(this->send.una, ackn, this->send.nxt + 1)) {
-                    if (!this->unacked.data.empty()) {
+                    if (!this->unacked.empty()) {
                         int32_t data_start = [&]() {
                             if (this->send.una == this->send.iss) {
                                 // send.una hasn't been updated yet with ACK for our SYN, so data starts just beyond it
                                 return this->send.una + 1;
                             } else {
                                 return this->send.una;
-                            };
+                            }
                         }();
 
-                        int32_t acked_data_end = std::min(ackn - data_start, (uint32_t)this->unacked.data.size());
+                        int32_t acked_data_end = std::min(ackn - data_start, (uint32_t)this->unacked.get_size());
                         this->unacked.remove(acked_data_end);
 
                         std::map<uint32_t, std::chrono::_V2::system_clock::time_point>::const_iterator itr;
@@ -340,7 +348,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                     the retransmission queue is empty, the user's CLOSE can be
                     acknowledged ("ok") but do not delete the TCB.
                     */
-                    if (unacked.data.empty()) {
+                    if (unacked.empty()) {
                         if (!tcp_h.fin()) std::cout << "the user's CLOSE is acknowledged" << std::endl;
                     }
                 }
@@ -380,6 +388,7 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                     // we must have received a re-transmitted FIN that we ahve already seen
                     // nxt points to beyond the fin, but the fin is not in data
                     assert(unread_data_at == (uint32_t)(data_len + 1));
+                    /** TODO: Value stored to 'unread_data_at' is never read */
                     unread_data_at = 0;
                 }
                 incoming.enqueue(data, data_len);
@@ -431,6 +440,8 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
 }
 
 void Connection::on_tick(struct device *dev) {
+    std::scoped_lock<std::mutex> lock(lockMutex);
+
     if ((state == State::Closed) || (state == State::TimeWait) || (state == State::FinWait2)) {
         // we have shutdown our write side and the other side acked, no need to (re)transmit anything
         return;
@@ -440,7 +451,7 @@ void Connection::on_tick(struct device *dev) {
 
     // nunacked_data and nunsent_data includes SYN and FIN flag
     uint32_t nunacked_data = this->send.nxt - this->send.una;
-    uint32_t nunsent_data = nunacked_data > (uint32_t)this->unacked.data.size() ? 0 : (uint32_t)this->unacked.data.size() - nunacked_data;
+    uint32_t nunsent_data = nunacked_data > (uint32_t)this->unacked.get_size() ? 0 : (uint32_t)this->unacked.get_size() - nunacked_data;
 
     int64_t waited_for = 0;
 
@@ -479,9 +490,9 @@ void Connection::on_tick(struct device *dev) {
             return;
         }
 
-        uint32_t send_limit = std::min((uint32_t)this->unacked.data.size(), (uint32_t)this->send.wnd);
+        uint32_t send_limit = std::min((uint32_t)this->unacked.get_size(), (uint32_t)this->send.wnd);
 
-        if (send_limit < this->send.wnd && this->send_closed) {
+        if (send_limit < this->send.wnd && this->is_send_closed) {
             std::cout << "Resend FIN" << std::endl;
             this->tcp.fin(true);
         } else if (send_limit == 0) {
@@ -500,7 +511,7 @@ void Connection::on_tick(struct device *dev) {
         if (allowed == 0) return;
 
         uint32_t send_limit = std::min(nunsent_data, allowed);
-        if (send_limit < allowed && this->send_closed) {
+        if (send_limit < allowed && this->is_send_closed) {
             this->tcp.fin(true);
         } else if (send_limit == 0) {
             return;
@@ -515,7 +526,7 @@ void Connection::on_tick(struct device *dev) {
 void Connection::flush(struct device *dev) {
     // nunacked_data and nunsent_data includes SYN and FIN flag
     uint32_t nunacked_data = this->send.nxt - this->send.una;
-    uint32_t nunsent_data = nunacked_data > (uint32_t)this->unacked.data.size() ? 0 : (uint32_t)this->unacked.data.size() - nunacked_data;
+    uint32_t nunsent_data = nunacked_data > (uint32_t)this->unacked.get_size() ? 0 : (uint32_t)this->unacked.get_size() - nunacked_data;
 
     // we should send new data if have new data and space in the window
     if ((nunacked_data == 0) && (nunsent_data == 0)) {
@@ -528,14 +539,14 @@ void Connection::flush(struct device *dev) {
     }
 
     uint32_t send_data = std::min(nunacked_data + nunsent_data, allowed);
-    if (send_data < allowed && this->send_closed && this->send_closed_at == 0) {
+    if (send_data < allowed && this->is_send_closed && this->send_closed_at == 0) {
         this->tcp.fin(true);
-        this->send_closed_at = this->send.una + (uint32_t)this->unacked.data.size();
+        this->send_closed_at = this->send.una + (uint32_t)this->unacked.get_size();
     }
 
     if (send_data == 0) {
         return;
-    };
+    }
 
     this->write(dev, this->send.una, send_data);
 }
@@ -550,7 +561,7 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     uint32_t offset = seq - this->send.una;
 
     // we need two special case the two 'virtual' bytes SYN and FIN
-    if (this->send_closed && (seq == this->send_closed_at + 1)) {
+    if (this->is_send_closed && (seq == this->send_closed_at + 1)) {
         // trying to write following FIN
         offset = 0;
         limit = 0;
@@ -559,7 +570,7 @@ void Connection::write(struct device *dev, uint32_t seq, uint32_t limit) {
     this->ip.set_size(20);
     this->tcp.set_header_len(20);
 
-    const uint32_t max_data = std::min(limit, (uint32_t)unacked.data.size());
+    const uint32_t max_data = std::min(limit, (uint32_t)unacked.get_size());
     const uint32_t size = std::min(buf_len, (uint32_t)this->tcp.get_header_len() + (uint32_t)ip.get_size() + max_data);
 
     this->ip.payload_len = (uint16_t)size;
@@ -672,8 +683,8 @@ bool Connection::sequence_number_check(uint32_t slen, uint32_t seqn, uint32_t we
         } else {
             return true;
         }
-    };
-};
+    }
+}
 
 bool Connection::is_rcv_closed() const {
     return (state == State::TimeWait) || (state == State::CloseWait) || (state == State::LastAck) || (state == State::Closed) || (state == State::Closing)
@@ -688,7 +699,9 @@ bool Connection::is_snd_closed() const {
 }
 
 void Connection::send_data(std::string &data) {
-    if ((this->state == State::Closed))
+    std::scoped_lock<std::mutex> lock(lockMutex);
+
+    if (this->state == State::Closed)
         std::cout << "error: connection does not exist" << std::endl;
     else if ((this->state == State::Listen))
         std::cout << "error: foreign socket unspecified (not implemented)" << std::endl;

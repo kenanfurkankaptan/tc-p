@@ -9,7 +9,7 @@ ConnectionInfo::~ConnectionInfo() {
     if (connection != nullptr) delete connection;
 }
 
-bool ConnectionInfo::check_if_connection_closed() const { return (connection->state == State::Closed); }
+bool ConnectionInfo::check_if_connection_closed() const { return connection->is_connection_closed(); }
 
 Connection* ConnectionInfo::create_new_connection() {
     this->connection = new Connection();

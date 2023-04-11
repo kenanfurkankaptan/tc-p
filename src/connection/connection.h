@@ -93,12 +93,38 @@ struct Timer {
     std::map<uint32_t, std::chrono::_V2::system_clock::time_point> send_times;
 };
 
+/** TODO: Don't mix public and private data members. getters that returns reference could be added to class */ 
 class Connection {
    public:
+    /*
+    A copy or move assignment operator cannot be automatically generated
+    by the compiler for classes with data members that are arrays
+    (which are not copy- or move-assignable) so you must define your own.
+    */
+    Connection() = default;
+
+    void connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port);
+    void on_packet(struct device *dev, const Net::Ipv4Header &ip_h, const Net::TcpHeader &tcp_h, uint8_t *data, int data_len);
+    void on_tick(struct device *dev);
+    void send_data(std::string &data);
+    void close_send();
+    void check_close_timer();
+
+    inline bool is_connection_closed() {
+        std::scoped_lock<std::mutex> lock(lockMutex);
+        return this->connection_closed;
+    }
+
+
+   private:
     std::mutex lockMutex;
 
     State state = State::Listen;
     State previous_state = State::Closed;
+
+    Net::Ipv4Header ip;
+    Net::TcpHeader tcp;
+
 
     inline void change_state(State new_state) {
         this->previous_state = this->state;
@@ -107,34 +133,24 @@ class Connection {
 
     SendSequenceSpace send;
     RecvSequenceSpace recv;
-    Net::Ipv4Header ip;
-    Net::TcpHeader tcp;
+
     Timer timers;
     Queue incoming;
     Queue unacked;  // unacked contains both sent and unsent data
 
-    bool send_closed;
+    bool is_send_closed;
     uint32_t send_closed_at = 0;  // == 0 means it is not set
 
-    bool connection_is_closed;
+    bool connection_closed;
     std::chrono::_V2::system_clock::time_point connection_close_start_time;
 
-    /*
-    A copy or move assignment operator cannot be automatically generated
-    by the compiler for classes with data members that are arrays
-    (which are not copy- or move-assignable) so you must define your own.
-    */
-    Connection() = default;
+
 
     void accept(struct device *dev, const Net::Ipv4Header &ip_h, const Net::TcpHeader &tcp_h);
-    void connect(struct device *dev, uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port);
     void delete_TCB();
-    void close_send();
+    
     void start_close_timer();
-    void check_close_timer();
-
-    void on_packet(struct device *dev, const Net::Ipv4Header &ip_h, const Net::TcpHeader &tcp_h, uint8_t *data, int data_len);
-    void on_tick(struct device *dev);
+    
     void flush(struct device *dev);
 
     void write(struct device *dev, uint32_t seq, uint32_t limit);
@@ -146,7 +162,6 @@ class Connection {
     bool is_rcv_closed() const;
     bool is_snd_closed() const;
 
-    void send_data(std::string &data);
 };
 
 #endif /* CONNECTION_H */

@@ -9,10 +9,7 @@
 #include <thread>
 
 Controller::Controller() {
-    struct device *dev;
-
-    dev = tuntap_init();
-    this->dev = dev;
+    this->dev = tuntap_init();
 
     if (tuntap_start(dev, TUNTAP_MODE_TUNNEL, TUNTAP_ID_ANY) == -1) {
         return;
@@ -28,7 +25,6 @@ Controller::Controller() {
     listened_ports = {};
 }
 
-/** TODO: fix destroy */
 Controller::~Controller() {
     for (auto p : connection_list) {
         delete p;
@@ -45,7 +41,7 @@ void Controller::listen_port(uint16_t port) {
     std::cout << "listenning port: " << port << std::endl;
 }
 
-void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) {
+void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) const {
     for (auto c : connection_list) {
         if (*c == ConnectionInfo(src_ip, dst_ip, src_port, dst_port)) {
             /** TODO: it added for tests, remove it later */
@@ -62,7 +58,7 @@ void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t 
 
 // add_connection() accepts ip's as host byte order.
 // use ntohl to convert them network byte order to host byte order.
-void Controller::add_connection(ConnectionInfo *connection_info) {
+void Controller::add_connection(const ConnectionInfo *connection_info) {
     auto temp_connection = new ConnectionInfo(connection_info->src_ip, connection_info->dst_ip, connection_info->src_port, connection_info->dst_port);
     connection_list.push_back(temp_connection);
     connection_list.back()->create_new_connection()->connect(dev, connection_info->src_ip, connection_info->dst_ip, connection_info->src_port,
@@ -79,7 +75,7 @@ void Controller::packet_loop() {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
             // TODO: mutex locks whole loop unnecessarily find better way
-            std::lock_guard connection_list_guard(this->connection_list_mutex);
+            // std::lock_guard connection_list_guard(this->connection_list_mutex);
             for (int idx = 0; auto c : connection_list) {
                 if (c->connection == nullptr) return;
                 c->connection->on_tick(dev);
@@ -127,7 +123,7 @@ void Controller::packet_loop() {
         int data_len = ip.payload_len - (ip.get_size() + tcp.get_header_len());
 
         // TODO: mutex locks whole loop unnecessarily find better way
-        std::lock_guard connection_list_guard(this->connection_list_mutex);
+        // std::lock_guard connection_list_guard(this->connection_list_mutex);
 
         // check if same connection established before
         auto index_iterator = std::ranges::find_if(connection_list.begin(), connection_list.end(), [&](ConnectionInfo const *c) {
@@ -166,4 +162,6 @@ void Controller::packet_loop() {
             }
         }
     }
+
+    return;
 }

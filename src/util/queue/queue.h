@@ -5,10 +5,13 @@
 #include <mutex>
 #include <queue>
 
+/* 
+ A Queue is defined as a linear data structure that is open at both ends and 
+ the operations are performed in First In First Out (FIFO) order.
+ It is thread safe
+*/
 class Queue {
    public:
-    std::deque<uint8_t> data = {};
-
     void operator=(const Queue &q);
 
     int enqueue(uint8_t *array, int bytesToWrite);
@@ -17,8 +20,13 @@ class Queue {
     int remove(int bytesToRemove);
     uint64_t clear();
 
+    uint64_t get_size();
+    bool empty();
+
+
    private:
     std::mutex lockMutex;
+    std::deque<uint8_t> data = {};
 };
 
 #endif /* QUEUE_H */
