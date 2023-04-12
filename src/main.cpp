@@ -16,7 +16,7 @@
 #include "control/controller.h"
 
 int main() {
-    auto ctrl = Controller();
+    auto ctrl = Controller("192.168.0.1");
     ctrl.listen_port(9000);
     ctrl.listen_port(9500);
 

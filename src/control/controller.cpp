@@ -8,13 +8,13 @@
 #include <iostream>
 #include <thread>
 
-Controller::Controller() {
+Controller::Controller(const std::string ip) {
     this->dev = tuntap_init();
 
     if (tuntap_start(dev, TUNTAP_MODE_TUNNEL, TUNTAP_ID_ANY) == -1) {
         return;
     }
-    if (tuntap_set_ip(dev, "192.168.0.1", 24) == -1) {
+    if (tuntap_set_ip(dev, ip.c_str(), 24) == -1) {
         return;
     }
     if (tuntap_up(dev) == -1) {

@@ -18,7 +18,7 @@ class Controller {
 
     std::mutex connection_list_mutex;
 
-    Controller();
+    explicit Controller(const std::string ip);
     ~Controller();
 
     void packet_loop();
