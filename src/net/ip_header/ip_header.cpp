@@ -170,7 +170,7 @@ uint16_t Ipv4Header::compute_ipv4_checksum() {
     return ((uint16_t)sum ^ 0xFFFF);
 };
 
-std::array<int8_t, 4> Ipv4Header::get_src_ip_array() {
+std::array<int8_t, 4> Ipv4Header::get_src_ip_array() const {
     return std::array<int8_t, 4>{
         (int8_t)((source >> 24) & 0xFF),
         (int8_t)((source >> 16) & 0xFF),
@@ -179,7 +179,7 @@ std::array<int8_t, 4> Ipv4Header::get_src_ip_array() {
     };
 }
 
-std::array<int8_t, 4> Ipv4Header::get_dst_ip_array() {
+std::array<int8_t, 4> Ipv4Header::get_dst_ip_array() const {
     return std::array<int8_t, 4>{
         (int8_t)((destination >> 24) & 0xFF),
         (int8_t)((destination >> 16) & 0xFF),

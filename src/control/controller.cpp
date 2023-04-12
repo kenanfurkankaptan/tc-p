@@ -20,15 +20,10 @@ Controller::Controller() {
     if (tuntap_up(dev) == -1) {
         return;
     }
-
-    connection_list = {};
-    listened_ports = {};
 }
 
 Controller::~Controller() {
-    for (auto p : connection_list) {
-        delete p;
-    }
+    // deletes the smart pointers and objects pointed to
     connection_list.clear();
     listened_ports.clear();
 
@@ -41,8 +36,8 @@ void Controller::listen_port(uint16_t port) {
     std::cout << "listenning port: " << port << std::endl;
 }
 
-void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string &data) const {
-    for (auto c : connection_list) {
+void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t src_port, uint16_t dst_port, std::string& data) const {
+    for (auto& c : connection_list) {
         if (*c == ConnectionInfo(src_ip, dst_ip, src_port, dst_port)) {
             /** TODO: it added for tests, remove it later */
             if (data == "exit\n") {
@@ -58,9 +53,10 @@ void Controller::write_to_connection(uint32_t src_ip, uint32_t dst_ip, uint16_t 
 
 // add_connection() accepts ip's as host byte order.
 // use ntohl to convert them network byte order to host byte order.
-void Controller::add_connection(const ConnectionInfo *connection_info) {
-    auto temp_connection = new ConnectionInfo(connection_info->src_ip, connection_info->dst_ip, connection_info->src_port, connection_info->dst_port);
-    connection_list.push_back(temp_connection);
+void Controller::add_connection(const ConnectionInfo* connection_info) {
+    auto temp_connection(
+        std::make_unique<ConnectionInfo>(connection_info->src_ip, connection_info->dst_ip, connection_info->src_port, connection_info->dst_port));
+    connection_list.push_back(std::move(temp_connection));
     connection_list.back()->create_new_connection()->connect(dev, connection_info->src_ip, connection_info->dst_ip, connection_info->src_port,
                                                              connection_info->dst_port);
 
@@ -76,14 +72,13 @@ void Controller::packet_loop() {
 
             // TODO: mutex locks whole loop unnecessarily find better way
             // std::lock_guard connection_list_guard(this->connection_list_mutex);
-            for (int idx = 0; auto c : connection_list) {
+            for (int idx = 0; auto& c : connection_list) {
                 if (c->connection == nullptr) return;
                 c->connection->on_tick(dev);
                 c->connection->check_close_timer();
 
                 // remove connection if it is in closed state
                 if (c->check_if_connection_closed()) {
-                    delete c;
                     connection_list.erase(connection_list.begin() + idx);
                     std::cout << "connection removed from the list " << std::endl;
                 }
@@ -119,25 +114,25 @@ void Controller::packet_loop() {
 
         auto tcp = Net::TcpHeader(tcp_packet, true);
 
-        uint8_t *data = (uint8_t *)buff + ip.get_size() + tcp.get_header_len();
+        uint8_t* data = (uint8_t*)buff + ip.get_size() + tcp.get_header_len();
         int data_len = ip.payload_len - (ip.get_size() + tcp.get_header_len());
 
         // TODO: mutex locks whole loop unnecessarily find better way
         // std::lock_guard connection_list_guard(this->connection_list_mutex);
 
-        // check if same connection established before
-        auto index_iterator = std::ranges::find_if(connection_list.begin(), connection_list.end(), [&](ConnectionInfo const *c) {
-            return c->src_ip == ip.source && c->dst_ip == ip.destination && c->src_port == tcp.source_port && c->dst_port == tcp.destination_port;
+        auto index_iterator = std::ranges::find_if(connection_list.begin(), connection_list.end(), [&](std::unique_ptr<ConnectionInfo> const& c) {
+            return (c->src_ip == ip.source) && (c->dst_ip == ip.destination) && (c->src_port == tcp.source_port) && (c->dst_port == tcp.destination_port);
         });
+
         if (index_iterator != connection_list.end()) {
             // connection is exist
             long int index = index_iterator - connection_list.begin();
-            auto index_connection = connection_list.at(index);
+            auto& index_connection = connection_list.at(index);
 
             index_connection->connection->on_packet(dev, ip, tcp, data, data_len);
 
             if (data_len > 0) {
-                auto data_str = std::string((char *)data);
+                auto data_str = std::string((char*)data);
 
                 // if data ends with newline, remove it
                 // in response table newlines are not included
@@ -150,9 +145,8 @@ void Controller::packet_loop() {
             // connection is not exist
             if (std::ranges::find(listened_ports.begin(), listened_ports.end(), tcp.destination_port) != listened_ports.end()) {
                 // port is accepted, create new connection
-                auto temp_connection = new ConnectionInfo(ip.source, ip.destination, tcp.source_port, tcp.destination_port);
-
-                connection_list.push_back(temp_connection);
+                auto temp_connection(std::make_unique<ConnectionInfo>(ip.source, ip.destination, tcp.source_port, tcp.destination_port));
+                connection_list.push_back(std::move(temp_connection));
                 connection_list.back()->create_new_connection()->on_packet(dev, ip, tcp, data, data_len);
 
                 std::cout << "new packet on port: " << temp_connection->dst_port << std::endl;

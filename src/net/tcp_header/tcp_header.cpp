@@ -189,10 +189,10 @@ void TcpHeader::set_header_len(uint16_t len) {
 
 /* get flags */
 /*
-    A "const function", denoted with the keyword const after a function declaration,
-    makes it a compiler error for this class function to change a member variable of the class.
-    However, reading of a class variables is okay inside of the function,
-    but writing inside of this function will generate a compiler error.
+A "const function", denoted with the keyword const after a function declaration,
+makes it a compiler error for this class function to change a member variable of the class.
+However, reading of a class variables is okay inside of the function,
+but writing inside of this function will generate a compiler error.
 */
 bool TcpHeader::nonce() const { return (data_offset_and_flags >> 8) & 1U; }
 bool TcpHeader::cwr() const { return (data_offset_and_flags >> 7) & 1U; }

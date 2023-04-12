@@ -5,13 +5,11 @@ ConnectionInfo::ConnectionInfo(uint32_t src_ip, uint32_t dst_ip, uint16_t src_po
     if (!response_table.empty()) this->response_table = response_table;
 }
 
-ConnectionInfo::~ConnectionInfo() {
-    if (connection != nullptr) delete connection;
-}
+ConnectionInfo::~ConnectionInfo() = default;
 
 bool ConnectionInfo::check_if_connection_closed() const { return connection->is_connection_closed(); }
 
-Connection* ConnectionInfo::create_new_connection() {
-    this->connection = new Connection();
+std::unique_ptr<Connection>& ConnectionInfo::create_new_connection() {
+    this->connection = std::make_unique<Connection>();
     return this->connection;
 }

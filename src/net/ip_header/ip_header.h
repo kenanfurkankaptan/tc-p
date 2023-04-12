@@ -35,8 +35,8 @@ class Ipv4Header {
     void set_size(uint8_t size);
     uint16_t compute_ipv4_checksum();
 
-    std::array<int8_t, 4> get_src_ip_array();
-    std::array<int8_t, 4> get_dst_ip_array();
+    std::array<int8_t, 4> get_src_ip_array() const;
+    std::array<int8_t, 4> get_dst_ip_array() const;
 };
 
 }  // namespace Net

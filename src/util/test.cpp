@@ -16,7 +16,7 @@ std::string toIpAddrString(int32_t ip) {
     return "";
 }
 
-void test_ip_header(Net::Ipv4Header &ip) {
+void test_ip_header(const Net::Ipv4Header &ip) {
     std::cout << "ver_ihl " << std::bitset<8>(ip.ver_ihl) << std::endl;
     std::cout << "tos " << std::bitset<8>(ip.tos) << std::endl;
     std::cout << "payload_len " << std::bitset<16>(ip.payload_len) << std::endl;
@@ -29,7 +29,7 @@ void test_ip_header(Net::Ipv4Header &ip) {
     std::cout << "destination " << std::bitset<32>(ip.destination) << std::endl;
 }
 
-void test_ip_options(Net::Ipv4Header &ip) {
+void test_ip_options(const Net::Ipv4Header &ip) {
     for (int i = 0; i < ip.get_size() - 20; i++) {
         std::cout << std::bitset<8>(ip.options[i]) << std::endl;
     }
@@ -37,7 +37,7 @@ void test_ip_options(Net::Ipv4Header &ip) {
 
 //-------------------------------------------------------------------------------------------
 
-void test_tcp_flags(Net::TcpHeader &tcp) {
+void test_tcp_flags(const Net::TcpHeader &tcp) {
     std::cout << "data_offset_and_flags: " << std::bitset<16>(tcp.data_offset_and_flags) << std::endl;
 
     std::cout << "header len: " << tcp.get_header_len() << std::endl;
@@ -52,7 +52,7 @@ void test_tcp_flags(Net::TcpHeader &tcp) {
     std::cout << "fin: " << tcp.fin() << std::endl;
 }
 
-void test_tcp_options(Net::TcpHeader &tcp) {
+void test_tcp_options(const Net::TcpHeader &tcp) {
     for (int i = 0; i < tcp.get_header_len() - 20; i++) {
         std::cout << std::bitset<8>(tcp.options[i]) << std::endl;
     }

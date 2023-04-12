@@ -122,7 +122,6 @@ void Connection::check_close_timer() {
     if (!this->connection_closed) return;
 
     auto time_passed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - connection_close_start_time).count();
-
     // 2 * 1000 = 2 milisecond
     if (time_passed > (2 * 1000)) delete_TCB();
     return;
@@ -205,7 +204,9 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
                 return this->write(dev, this->send.iss, 0);
             }
         }
-        if (!tcp.syn() && !tcp.rst()) return;
+        else {
+            if(!tcp.rst()) return;
+        } 
 
         return;
     }
@@ -383,15 +384,13 @@ void Connection::on_packet(struct device *dev, const Net::Ipv4Header &ip_h, cons
         if (data_len > 0) {
             if ((state == State::Estab) || (state == State::FinWait1) || (state == State::FinWait2)) {
                 uint32_t unread_data_at = this->recv.nxt - seqn;
-
                 if (unread_data_at > (uint32_t)data_len) {
-                    // we must have received a re-transmitted FIN that we ahve already seen
+                    // we must have received a re-transmitted FIN that we have already seen
                     // nxt points to beyond the fin, but the fin is not in data
                     assert(unread_data_at == (uint32_t)(data_len + 1));
-                    /** TODO: Value stored to 'unread_data_at' is never read */
                     unread_data_at = 0;
                 }
-                incoming.enqueue(data, data_len);
+                incoming.enqueue(data + unread_data_at, data_len);
 
                 std::cout << "incoming data: ";
                 const unsigned char *ptr = data;
@@ -703,7 +702,7 @@ void Connection::send_data(std::string &data) {
 
     if (this->state == State::Closed)
         std::cout << "error: connection does not exist" << std::endl;
-    else if ((this->state == State::Listen))
+    else if (this->state == State::Listen)
         std::cout << "error: foreign socket unspecified (not implemented)" << std::endl;
     else if ((this->state == State::SynRcvd) || (this->state == State::SynSent))
         std::cout << "error: insufficient resources" << std::endl;
