@@ -9,7 +9,7 @@ tc-p is a simple C++ TCP protocol implementation, to serve as an example to anyo
 4) https://gcc.gnu.org/onlinedocs/gcc/Instrumentation-Options.html: GCC sanitizer options
 
 **Dependencies:**
-https://github.com/LaKabane/libtuntap: TunTap C++ wrapper 
+- **https://github.com/LaKabane/libtuntap: TunTap C++ wrapper 
 
 **Run:**
 
