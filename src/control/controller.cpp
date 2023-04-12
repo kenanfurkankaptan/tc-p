@@ -69,10 +69,7 @@ void Controller::packet_loop() {
     std::jthread timer_loop([&]() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
-            // TODO: mutex locks whole loop unnecessarily find better way
-            // std::lock_guard connection_list_guard(this->connection_list_mutex);
-            for (int idx = 0; auto& c : connection_list) {
+            for (int idx = 0; auto const& c : connection_list) {
                 if (c->connection == nullptr) return;
                 c->connection->on_tick(dev);
                 c->connection->check_close_timer();
@@ -117,9 +114,6 @@ void Controller::packet_loop() {
         uint8_t* data = (uint8_t*)buff + ip.get_size() + tcp.get_header_len();
         int data_len = ip.payload_len - (ip.get_size() + tcp.get_header_len());
 
-        // TODO: mutex locks whole loop unnecessarily find better way
-        // std::lock_guard connection_list_guard(this->connection_list_mutex);
-
         auto index_iterator = std::ranges::find_if(connection_list.begin(), connection_list.end(), [&](std::unique_ptr<ConnectionInfo> const& c) {
             return (c->src_ip == ip.source) && (c->dst_ip == ip.destination) && (c->src_port == tcp.source_port) && (c->dst_port == tcp.destination_port);
         });
@@ -127,7 +121,7 @@ void Controller::packet_loop() {
         if (index_iterator != connection_list.end()) {
             // connection is exist
             long int index = index_iterator - connection_list.begin();
-            auto& index_connection = connection_list.at(index);
+            auto const& index_connection = connection_list.at(index);
 
             index_connection->connection->on_packet(dev, ip, tcp, data, data_len);
 
